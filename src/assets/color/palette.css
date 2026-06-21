@@ -1,0 +1,27 @@
+:root {
+  --palette-blush: #fdcfbf;
+  --palette-peach: #feb89f;
+  --palette-rose: #e23d75;
+  --palette-wine: #5f0d3b;
+  --palette-plum: #742365;
+}
+
+.color1 {
+  color: var(--palette-blush);
+}
+
+.color2 {
+  color: var(--palette-peach);
+}
+
+.color3 {
+  color: var(--palette-rose);
+}
+
+.color4 {
+  color: var(--palette-wine);
+}
+
+.color5 {
+  color: var(--palette-plum);
+}
