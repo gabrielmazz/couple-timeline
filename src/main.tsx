@@ -26,6 +26,8 @@ import App from './App'
 import { AuthProvider } from './components/auth/AuthProvider'
 import './index.css'
 
+const routerBasename = import.meta.env.BASE_URL
+
 const theme = createTheme({
   primaryColor: 'pink',
   defaultRadius: 8,
@@ -115,7 +117,7 @@ createRoot(document.getElementById('root')!).render(
     <MantineProvider theme={theme} defaultColorScheme="dark">
       <Notifications position="top-right" zIndex={5000} />
       <ModalsProvider>
-        <BrowserRouter>
+        <BrowserRouter basename={routerBasename}>
           <AuthProvider>
             <App />
           </AuthProvider>
