@@ -1,4 +1,4 @@
-import type { Couple, TimelineEvent, TimelinePhoto } from './database'
+import type { Couple, EventCategory, TimelineEvent, TimelinePhoto } from './database'
 
 export type CoupleListItem = Couple & {
   memberRole: string
@@ -23,7 +23,12 @@ export type TimelinePayload = {
 
 export type EventFormModel = {
   title: string
+  subtitle: string
   eventDate: string
+  locationName: string
+  eventTime: string
+  category: EventCategory | ''
+  tags: string[]
   description: string
   musicUrl: string
   coverPhotoPath: string | null

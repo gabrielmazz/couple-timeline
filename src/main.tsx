@@ -11,6 +11,8 @@ import {
   MantineProvider,
   PasswordInput,
   SegmentedControl,
+  Select,
+  TagsInput,
   TextInput,
   Textarea,
   createTheme,
@@ -83,6 +85,16 @@ const theme = createTheme({
         innerLabel: {
           lineHeight: 1,
         },
+      },
+    }),
+    Select: Select.extend({
+      defaultProps: {
+        radius: 'sm',
+      },
+    }),
+    TagsInput: TagsInput.extend({
+      defaultProps: {
+        radius: 'sm',
       },
     }),
     Textarea: Textarea.extend({

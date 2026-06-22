@@ -40,13 +40,40 @@ create table if not exists public.timeline_events (
   event_date date not null,
   year integer not null,
   title text not null,
+  subtitle text,
   description text,
+  location_name text,
+  event_time text,
+  category text,
+  tags text[] not null default '{}',
   music_url text,
   cover_photo_path text,
   created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.timeline_events
+  add column if not exists subtitle text,
+  add column if not exists location_name text,
+  add column if not exists event_time text,
+  add column if not exists category text,
+  add column if not exists tags text[] not null default '{}';
+
+alter table public.timeline_events
+  drop constraint if exists timeline_events_category_check;
+
+alter table public.timeline_events
+  add constraint timeline_events_category_check check (category in (
+    'Primeiro encontro', 'Primeiro beijo', 'Início do namoro', 'Pedido de namoro',
+    'Noivado', 'Pedido de casamento', 'Viagem', 'Fim de semana', 'Passeio', 'Praia',
+    'Aventura', 'Lua de mel', 'Aniversário', 'Aniversário de namoro',
+    'Aniversário de casamento', 'Pedido', 'Casamento', 'Jantar', 'Almoço', 'Café',
+    'Piquenique', 'Cinema', 'Teatro', 'Show', 'Festival', 'Festa', 'Natal', 'Ano Novo',
+    'Dia dos Namorados', 'Presente', 'Surpresa', 'Conquista', 'Formatura', 'Novo emprego',
+    'Casa nova', 'Mudança', 'Adoção de pet', 'Família', 'Amigos',
+    'Sessão de fotos', 'Reconciliação', 'Dia comum especial', 'Outro'
+  ));
 
 create table if not exists public.timeline_photos (
   id uuid primary key default gen_random_uuid(),

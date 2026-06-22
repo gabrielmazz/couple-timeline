@@ -149,6 +149,54 @@ img {
   height: 100%;
 }
 
+.event-photo-sortable {
+  cursor: grab;
+  transition: opacity 150ms ease, transform 150ms ease, border-color 150ms ease;
+}
+
+.event-photo-sortable:active {
+  cursor: grabbing;
+}
+
+.event-photo-sortable[data-dragging] {
+  opacity: 0.5;
+  transform: scale(0.98);
+  border-color: var(--palette-rose);
+}
+
+.event-photo-sortable-preview {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.event-photo-position,
+.event-photo-drag-handle {
+  position: absolute;
+  top: 8px;
+  z-index: 1;
+}
+
+.event-photo-position {
+  left: 8px;
+}
+
+.event-photo-drag-handle {
+  right: 8px;
+  padding: 3px;
+  color: #fff;
+  border-radius: 6px;
+  background: rgba(15, 8, 13, 0.72);
+}
+
+.timeline-photo-preview-close {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-out;
+}
+
 .timeline-event-modal-close {
   position: absolute;
   top: 14px;

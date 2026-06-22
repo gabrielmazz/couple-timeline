@@ -1,5 +1,5 @@
 import { Badge, Card, Group, Image, Stack, Text, Title } from '@mantine/core'
-import { CalendarDays, ImageOff } from 'lucide-react'
+import { CalendarDays, Clock3, ImageOff, MapPin } from 'lucide-react'
 import { compactText, formatDate } from '../../lib/utils'
 import type { TimelineEventWithPhotos } from '../../types/timeline'
 
@@ -44,9 +44,6 @@ export function TimelineCard({
 
             <Stack gap="sm" p="lg">
                 <Group justify="space-between" align="flex-start">
-                    <Badge color="pink" variant="filled" size="xl" radius="sm">
-                        {event.year}
-                    </Badge>
                     <Badge
                         className="mobile-year-marker"
                         color="pink"
@@ -63,10 +60,50 @@ export function TimelineCard({
                     <Title order={3} size="h2" lh={1.08}>
                         {event.title}
                     </Title>
+                    {event.subtitle ? (
+                        <Text c="var(--app-text)" size="md" fw={500}>
+                            {event.subtitle}
+                        </Text>
+                    ) : null}
+                    {event.category || event.event_time || event.location_name ? (
+                        <Group gap="xs" mt={4}>
+                            {event.category ? (
+                                <Badge color="pink" variant="light">
+                                    {event.category}
+                                </Badge>
+                            ) : null}
+                            {event.event_time ? (
+                                <Group gap={5} c="dimmed">
+                                    <Clock3 size={14} />
+                                    <Text size="xs">{event.event_time}</Text>
+                                </Group>
+                            ) : null}
+                            {event.location_name ? (
+                                <Group gap={5} c="dimmed">
+                                    <MapPin size={14} />
+                                    <Text size="xs">{event.location_name}</Text>
+                                </Group>
+                            ) : null}
+                        </Group>
+                    ) : null}
                     {event.description ? (
                         <Text c="dimmed" size="sm" lh={1.55}>
                             {compactText(event.description, 170)}
                         </Text>
+                    ) : null}
+                    {event.tags?.length ? (
+                        <Group gap={6} mt={4}>
+                            {event.tags.slice(0, 3).map((tag) => (
+                                <Badge key={tag} color="gray" variant="outline" size="sm">
+                                    {tag}
+                                </Badge>
+                            ))}
+                            {event.tags.length > 3 ? (
+                                <Text size="xs" c="dimmed">
+                                    +{event.tags.length - 3}
+                                </Text>
+                            ) : null}
+                        </Group>
                     ) : null}
                 </Stack>
             </Stack>

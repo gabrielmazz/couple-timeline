@@ -2,6 +2,50 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 
 export type TimelineVisibility = 'public' | 'private'
 export type CoupleRole = 'owner' | 'partner' | 'viewer'
+export type EventCategory =
+  | 'Primeiro encontro'
+  | 'Primeiro beijo'
+  | 'Início do namoro'
+  | 'Pedido de namoro'
+  | 'Noivado'
+  | 'Pedido de casamento'
+  | 'Viagem'
+  | 'Fim de semana'
+  | 'Passeio'
+  | 'Praia'
+  | 'Aventura'
+  | 'Lua de mel'
+  | 'Aniversário'
+  | 'Aniversário de namoro'
+  | 'Aniversário de casamento'
+  | 'Pedido'
+  | 'Casamento'
+  | 'Jantar'
+  | 'Almoço'
+  | 'Café'
+  | 'Piquenique'
+  | 'Cinema'
+  | 'Teatro'
+  | 'Show'
+  | 'Festival'
+  | 'Festa'
+  | 'Natal'
+  | 'Ano Novo'
+  | 'Dia dos Namorados'
+  | 'Presente'
+  | 'Surpresa'
+  | 'Conquista'
+  | 'Formatura'
+  | 'Novo emprego'
+  | 'Casa nova'
+  | 'Mudança'
+  | 'Adoção de pet'
+  | 'Família'
+  | 'Amigos'
+  | 'Sessão de fotos'
+  | 'Reconciliação'
+  | 'Dia comum especial'
+  | 'Outro'
 
 export type Profile = {
   id: string
@@ -33,7 +77,12 @@ export type TimelineEvent = {
   event_date: string
   year: number
   title: string
+  subtitle: string | null
   description: string | null
+  location_name: string | null
+  event_time: string | null
+  category: EventCategory | null
+  tags: string[]
   music_url: string | null
   cover_photo_path: string | null
   created_by: string | null
@@ -106,7 +155,12 @@ export type Database = {
           event_date: string
           year: number
           title: string
+          subtitle?: string | null
           description?: string | null
+          location_name?: string | null
+          event_time?: string | null
+          category?: EventCategory | null
+          tags?: string[]
           music_url?: string | null
           cover_photo_path?: string | null
           created_by?: string | null
@@ -117,7 +171,12 @@ export type Database = {
           event_date?: string
           year?: number
           title?: string
+          subtitle?: string | null
           description?: string | null
+          location_name?: string | null
+          event_time?: string | null
+          category?: EventCategory | null
+          tags?: string[]
           music_url?: string | null
           cover_photo_path?: string | null
           updated_at?: string
