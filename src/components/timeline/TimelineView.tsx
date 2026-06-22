@@ -18,12 +18,14 @@ export function TimelineView({
 	events,
 	years,
 	canEdit,
+	includesChildren,
 	onDeleted,
 }: {
 	couple: Couple
 	events: TimelineEventWithPhotos[]
 	years: number[]
 	canEdit: boolean
+	includesChildren: boolean
 	onDeleted: () => void
 }) {
 	const [selectedYear, setSelectedYear] = useState<number | null>(years.at(-1) ?? null)
@@ -114,17 +116,22 @@ export function TimelineView({
 				<div style={{ position: 'relative' }}>
 					<div className="timeline-track" onWheel={handleTimelineWheel}>
 						{visibleEvents.map((event) => (
-							<TimelineCard key={event.id} event={event} onClick={() => setSelectedEvent(event)} />
+							<TimelineCard
+								key={event.id}
+								event={event}
+								showSource={includesChildren}
+								onClick={() => setSelectedEvent(event)}
+							/>
 						))}
 					</div>
 				</div>
 			)}
 
 			<TimelineEventModal
-				coupleId={couple.id}
 				event={selectedEvent}
 				opened={Boolean(selectedEvent)}
 				canEdit={canEdit}
+				showSource={includesChildren}
 				onClose={() => setSelectedEvent(null)}
 				onDeleted={onDeleted}
 				onPhotoPreview={setPhotoPreview}

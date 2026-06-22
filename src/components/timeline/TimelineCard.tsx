@@ -5,9 +5,11 @@ import type { TimelineEventWithPhotos } from '../../types/timeline'
 
 export function TimelineCard({
     event,
+    showSource,
     onClick,
 }: {
     event: TimelineEventWithPhotos
+    showSource: boolean
     onClick: () => void
 }) {
     return (
@@ -52,6 +54,11 @@ export function TimelineCard({
                     >
                         {formatDate(event.event_date, { day: '2-digit', month: 'short' })}
                     </Badge>
+                    {showSource ? (
+                        <Badge color="grape" variant="light">
+                            {event.sourceTimeline.name}
+                        </Badge>
+                    ) : null}
                 </Group>
                 <Stack gap={4}>
                     <Text size="sm" c="var(--palette-blush)" fw={700}>

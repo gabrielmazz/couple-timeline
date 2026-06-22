@@ -60,6 +60,10 @@ export function AppFrame({ children }: { children: React.ReactNode }) {
 				</Menu.Target>
 				<Menu.Dropdown>
 					<Menu.Label>Conta</Menu.Label>
+					<Menu.Item component={Link} to="/perfil" leftSection={<UserRound size={16} />}>
+						Perfil e relacionamento
+					</Menu.Item>
+					<Menu.Divider />
 					<Menu.Item color="red" leftSection={<LogOut size={16} />} onClick={handleLogout}>
 						Sair
 					</Menu.Item>
