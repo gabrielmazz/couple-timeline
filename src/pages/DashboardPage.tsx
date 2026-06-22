@@ -112,8 +112,8 @@ export function DashboardPage() {
 	const [creating, setCreating] = useState(false)
 	const [modalOpened, setModalOpened] = useState(false)
 	const [selectedYear, setSelectedYear] = useState('all')
-	const [selectedMonth, setSelectedMonth] = useState('all')
-	const [sortOrder, setSortOrder] = useState<CardSortOrder>('asc')
+	const selectedMonth = 'all'
+	const sortOrder: CardSortOrder = 'asc'
 	const [error, setError] = useState<string | null>(null)
 	const form = useForm<CoupleForm>({
 		initialValues: {
@@ -151,14 +151,6 @@ export function DashboardPage() {
 
 		return () => window.clearTimeout(timer)
 	}, [loadTree])
-
-	const availableYears = useMemo(
-		() =>
-			Array.from(
-				new Set((tree?.children ?? []).map((timeline) => getCreatedAtParts(timeline.created_at).year)),
-			).sort((a, b) => a - b),
-		[tree?.children],
-	)
 
 	const visibleChildren = useMemo(() => {
 		return (tree?.children ?? [])
