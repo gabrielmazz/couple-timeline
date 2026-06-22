@@ -112,8 +112,8 @@ export function DashboardPage() {
 	const [creating, setCreating] = useState(false)
 	const [modalOpened, setModalOpened] = useState(false)
 	const [selectedYear, setSelectedYear] = useState('all')
-	const [selectedMonth] = useState('all')
-	const [sortOrder] = useState<CardSortOrder>('asc')
+	const selectedMonth = 'all'
+	const sortOrder: CardSortOrder = 'asc'
 	const [error, setError] = useState<string | null>(null)
 	const form = useForm<CoupleForm>({
 		initialValues: {
