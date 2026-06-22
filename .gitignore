@@ -23,5 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 
-# Arquivos de banco de dados
-.env
+# Arquivos de banco de dados ignorado na raiz do projeto
+*.db
+*.sqlite
+*.sqlite3
+*.env
