@@ -5,6 +5,52 @@ import { removeEventImages, uploadEventImages } from './storage'
 import { requireUser } from './queries'
 import type { TimelineVisibility } from '../../types/database'
 
+export const eventCategories = [
+  'Primeiro encontro',
+  'Primeiro beijo',
+  'Início do namoro',
+  'Pedido de namoro',
+  'Noivado',
+  'Pedido de casamento',
+  'Viagem',
+  'Fim de semana',
+  'Passeio',
+  'Praia',
+  'Aventura',
+  'Lua de mel',
+  'Aniversário',
+  'Aniversário de namoro',
+  'Aniversário de casamento',
+  'Pedido',
+  'Casamento',
+  'Jantar',
+  'Almoço',
+  'Café',
+  'Piquenique',
+  'Cinema',
+  'Teatro',
+  'Show',
+  'Festival',
+  'Festa',
+  'Natal',
+  'Ano Novo',
+  'Dia dos Namorados',
+  'Presente',
+  'Surpresa',
+  'Conquista',
+  'Formatura',
+  'Novo emprego',
+  'Casa nova',
+  'Mudança',
+  'Adoção de pet',
+  'Família',
+  'Amigos',
+  'Sessão de fotos',
+  'Reconciliação',
+  'Dia comum especial',
+  'Outro',
+] as const
+
 const coupleSchema = z.object({
   name: z.string().trim().min(2, 'Informe um nome com pelo menos 2 caracteres.'),
   visibility: z.enum(['private', 'public']),
@@ -18,7 +64,14 @@ const addMemberSchema = z.object({
 const eventSchema = z.object({
   coupleId: z.string().uuid(),
   title: z.string().trim().min(2, 'Informe um título.').max(120, 'Use até 120 caracteres.'),
+  subtitle: z.string().trim().max(160, 'Use até 160 caracteres.').optional(),
   eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Informe uma data válida.'),
+  locationName: z.string().trim().max(120, 'Use até 120 caracteres.').optional(),
+  eventTime: z.string().trim().max(40, 'Use até 40 caracteres.').optional(),
+  category: z.enum(eventCategories).optional().or(z.literal('')),
+  tags: z
+    .array(z.string().trim().min(1).max(30, 'Cada tag pode ter até 30 caracteres.'))
+    .max(8, 'Adicione no máximo 8 tags.'),
   description: z.string().trim().max(5000, 'Use até 5000 caracteres.').optional(),
   musicUrl: z
     .string()
@@ -47,6 +100,7 @@ export type UpdateEventInput = z.infer<typeof eventSchema> & {
   eventId: string
   files: File[]
   removedPhotoIds: string[]
+  existingPhotoOrder: string[]
   coverPhotoPath: string | null
   coverFileIndex: number | null
 }
@@ -114,6 +168,7 @@ export async function createTimelineEvent(input: CreateEventInput) {
   const user = await requireUser()
   const parsed = eventSchema.parse(input)
   const year = getYearFromDate(parsed.eventDate)
+  const tags = Array.from(new Map(parsed.tags.map((tag) => [tag.toLocaleLowerCase('pt-BR'), tag])).values())
 
   const { data: event, error: eventError } = await supabase
     .from('timeline_events')
@@ -122,7 +177,12 @@ export async function createTimelineEvent(input: CreateEventInput) {
       event_date: parsed.eventDate,
       year,
       title: parsed.title,
+      subtitle: parsed.subtitle || null,
       description: parsed.description || null,
+      location_name: parsed.locationName || null,
+      event_time: parsed.eventTime || null,
+      category: parsed.category || null,
+      tags,
       music_url: parsed.musicUrl || null,
       created_by: user.id,
     })
@@ -167,6 +227,7 @@ export async function updateTimelineEvent(input: UpdateEventInput) {
   await requireUser()
   const parsed = eventSchema.parse(input)
   const year = getYearFromDate(parsed.eventDate)
+  const tags = Array.from(new Map(parsed.tags.map((tag) => [tag.toLocaleLowerCase('pt-BR'), tag])).values())
   const { data, error: loadError } = await supabase
     .from('timeline_events')
     .select('id, couple_id, cover_photo_path, timeline_photos(id, storage_path, position)')
@@ -180,7 +241,19 @@ export async function updateTimelineEvent(input: UpdateEventInput) {
 
   const current = data as unknown as EventWithPhotosForWrite
   const removedPhotos = current.timeline_photos.filter((photo) => input.removedPhotoIds.includes(photo.id))
-  const remainingPhotos = current.timeline_photos.filter((photo) => !input.removedPhotoIds.includes(photo.id))
+  const remainingPhotosById = new Map(
+    current.timeline_photos
+      .filter((photo) => !input.removedPhotoIds.includes(photo.id))
+      .map((photo) => [photo.id, photo]),
+  )
+  const remainingPhotos = [
+    ...input.existingPhotoOrder
+      .map((photoId) => remainingPhotosById.get(photoId))
+      .filter((photo): photo is EventWithPhotosForWrite['timeline_photos'][number] => Boolean(photo)),
+    ...Array.from(remainingPhotosById.values()).filter(
+      (photo) => !input.existingPhotoOrder.includes(photo.id),
+    ),
+  ]
 
   if (removedPhotos.length > 0) {
     await removeEventImages(removedPhotos.map((photo) => photo.storage_path))
@@ -196,6 +269,17 @@ export async function updateTimelineEvent(input: UpdateEventInput) {
     if (deletePhotosError) {
       throw deletePhotosError
     }
+  }
+
+  const positionUpdates = await Promise.all(
+    remainingPhotos.map((photo, position) =>
+      supabase.from('timeline_photos').update({ position }).eq('id', photo.id).eq('event_id', input.eventId),
+    ),
+  )
+  const positionError = positionUpdates.find(({ error }) => error)?.error
+
+  if (positionError) {
+    throw positionError
   }
 
   const startPosition = remainingPhotos.length
@@ -234,7 +318,12 @@ export async function updateTimelineEvent(input: UpdateEventInput) {
       event_date: parsed.eventDate,
       year,
       title: parsed.title,
+      subtitle: parsed.subtitle || null,
       description: parsed.description || null,
+      location_name: parsed.locationName || null,
+      event_time: parsed.eventTime || null,
+      category: parsed.category || null,
+      tags,
       music_url: parsed.musicUrl || null,
       cover_photo_path: nextCover,
       updated_at: new Date().toISOString(),

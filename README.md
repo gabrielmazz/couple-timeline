@@ -26,7 +26,16 @@ SUPABASE_SERVICE_ROLE_KEY=
 2. Execute o arquivo `supabase/schema.sql` no SQL Editor.
 3. Confirme que o bucket privado `timeline-photos` foi criado.
 4. Em Auth, habilite e-mail/senha.
-5. Em Auth URLs, configure a URL local `http://localhost:5173` e a URL de produção da Vercel.
+5. No painel do Supabase, acesse **Authentication > URL Configuration**.
+6. Configure **Site URL** com a URL pública do aplicativo (nunca com `localhost` em produção).
+7. Adicione em **Redirect URLs** as URLs completas aceitas pelo cadastro:
+
+```text
+http://localhost:5173/couple-timeline/dashboard
+https://SEU-DOMINIO/couple-timeline/dashboard
+```
+
+O cadastro envia a URL da instalação atual ao Supabase por `emailRedirectTo`. Essa URL precisa estar na lista de Redirect URLs; caso contrário, o Supabase usa a Site URL como fallback.
 
 ## Comandos usados
 

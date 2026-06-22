@@ -24,6 +24,12 @@ type RegisterForm = {
   password: string
 }
 
+function getEmailConfirmationRedirectUrl() {
+  const appBaseUrl = new URL(import.meta.env.BASE_URL, window.location.origin)
+
+  return new URL('dashboard', appBaseUrl).toString()
+}
+
 export function RegisterPage() {
   const { user, loading, refreshSession } = useAuth()
   const navigate = useNavigate()
@@ -49,6 +55,7 @@ export function RegisterPage() {
         email: values.email,
         password: values.password,
         options: {
+          emailRedirectTo: getEmailConfirmationRedirectUrl(),
           data: {
             name: values.name,
           },

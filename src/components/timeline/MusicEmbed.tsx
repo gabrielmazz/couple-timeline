@@ -26,7 +26,7 @@ function getSpotifyEmbed(url: URL) {
         return null
     }
 
-    return `https://open.spotify.com/embed/${type}/${id}`
+    return `https://open.spotify.com/embed/${type}/${id}?autoplay=1`
 }
 
 export function MusicEmbed({ url }: { url: string | null }) {
@@ -50,7 +50,7 @@ export function MusicEmbed({ url }: { url: string | null }) {
             <iframe
                 className="music-frame"
                 title="Player do YouTube"
-                src={`https://www.youtube.com/embed/${youtubeId}`}
+                src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1`}
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
             />
