@@ -9,7 +9,7 @@ import {
 	Loader,
 	Modal,
 	SegmentedControl,
-	Select,
+	// Select,
 	Stack,
 	Text,
 	TextInput,
