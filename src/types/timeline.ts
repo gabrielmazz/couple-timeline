@@ -1,7 +1,14 @@
-import type { Couple, EventCategory, TimelineEvent, TimelinePhoto } from './database'
+import type { Couple, CoupleRole, EventCategory, TimelineEvent, TimelinePhoto } from './database'
 
 export type CoupleListItem = Couple & {
-  memberRole: string
+  memberRole: CoupleRole
+}
+
+export type TimelineTree = {
+  root: CoupleListItem
+  children: Couple[]
+  memberRole: CoupleRole
+  hasPartner: boolean
 }
 
 export type TimelinePhotoWithUrl = TimelinePhoto & {
@@ -11,6 +18,7 @@ export type TimelinePhotoWithUrl = TimelinePhoto & {
 export type TimelineEventWithPhotos = TimelineEvent & {
   photos: TimelinePhotoWithUrl[]
   coverUrl: string | null
+  sourceTimeline: Pick<Couple, 'id' | 'name'>
 }
 
 export type TimelinePayload = {
@@ -19,6 +27,7 @@ export type TimelinePayload = {
   years: number[]
   isMember: boolean
   canEdit: boolean
+  includesChildren: boolean
 }
 
 export type EventFormModel = {

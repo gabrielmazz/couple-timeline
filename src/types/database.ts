@@ -1,7 +1,7 @@
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[]
 
 export type TimelineVisibility = 'public' | 'private'
-export type CoupleRole = 'owner' | 'partner' | 'viewer'
+export type CoupleRole = 'owner' | 'partner'
 export type EventCategory =
   | 'Primeiro encontro'
   | 'Primeiro beijo'
@@ -51,6 +51,8 @@ export type Profile = {
   id: string
   name: string | null
   email: string | null
+  birth_date: string | null
+  bio: string | null
   created_at: string
 }
 
@@ -60,6 +62,8 @@ export type Couple = {
   slug: string | null
   visibility: TimelineVisibility
   created_by: string | null
+  parent_id: string | null
+  relationship_started_at: string | null
   created_at: string
 }
 
@@ -108,11 +112,15 @@ export type Database = {
           id: string
           name?: string | null
           email?: string | null
+          birth_date?: string | null
+          bio?: string | null
           created_at?: string
         }
         Update: {
           name?: string | null
           email?: string | null
+          birth_date?: string | null
+          bio?: string | null
         }
         Relationships: []
       }
@@ -124,12 +132,16 @@ export type Database = {
           slug?: string | null
           visibility?: TimelineVisibility
           created_by?: string | null
+          parent_id?: string | null
+          relationship_started_at?: string | null
           created_at?: string
         }
         Update: {
           name?: string
           slug?: string | null
           visibility?: TimelineVisibility
+          parent_id?: string | null
+          relationship_started_at?: string | null
         }
         Relationships: []
       }
@@ -209,6 +221,26 @@ export type Database = {
           member_email: string
         }
         Returns: string
+      }
+      create_couple_timeline: {
+        Args: {
+          timeline_name: string
+          timeline_visibility?: string
+        }
+        Returns: Couple
+      }
+      get_root_couple_id: {
+        Args: {
+          target_couple_id: string
+        }
+        Returns: string
+      }
+      update_relationship_started_at: {
+        Args: {
+          target_couple_id: string
+          relationship_start_date: string | null
+        }
+        Returns: string | null
       }
     }
     Enums: Record<string, never>

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { supabase } from '../supabase/client'
-import { getYearFromDate, slugify } from '../utils'
+import { getYearFromDate } from '../utils'
 import { removeEventImages, uploadEventImages } from './storage'
 import { requireUser } from './queries'
 import type { TimelineVisibility } from '../../types/database'
@@ -117,37 +117,18 @@ type EventWithPhotosForWrite = {
 }
 
 export async function createCouple(input: CreateCoupleInput) {
-  const user = await requireUser()
+  await requireUser()
   const parsed = coupleSchema.parse(input)
-  const baseSlug = slugify(parsed.name) || 'timeline'
-  const slug = `${baseSlug}-${crypto.randomUUID().slice(0, 8)}`
-
-  const { data: couple, error: coupleError } = await supabase
-    .from('couples')
-    .insert({
-      name: parsed.name,
-      slug,
-      visibility: parsed.visibility,
-      created_by: user.id,
-    })
-    .select('*')
-    .single()
-
-  if (coupleError) {
-    throw coupleError
-  }
-
-  const { error: memberError } = await supabase.from('couple_members').insert({
-    couple_id: couple.id,
-    user_id: user.id,
-    role: 'owner',
+  const { data, error } = await supabase.rpc('create_couple_timeline', {
+    timeline_name: parsed.name,
+    timeline_visibility: parsed.visibility,
   })
 
-  if (memberError) {
-    throw memberError
+  if (error) {
+    throw error
   }
 
-  return couple
+  return data
 }
 
 export async function addCoupleMemberByEmail(input: AddCoupleMemberInput) {

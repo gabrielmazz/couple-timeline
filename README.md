@@ -23,7 +23,7 @@ SUPABASE_SERVICE_ROLE_KEY=
 ## Supabase
 
 1. Crie um projeto no Supabase.
-2. Execute o arquivo `supabase/schema.sql` no SQL Editor.
+2. Em um projeto novo e vazio, use `supabase/schema.sql` apenas para o bootstrap inicial. Alterações posteriores devem ser feitas exclusivamente por migrations.
 3. Confirme que o bucket privado `timeline-photos` foi criado.
 4. Em Auth, habilite e-mail/senha.
 5. No painel do Supabase, acesse **Authentication > URL Configuration**.
@@ -34,6 +34,18 @@ SUPABASE_SERVICE_ROLE_KEY=
 http://localhost:5173/couple-timeline/dashboard
 https://SEU-DOMINIO/couple-timeline/dashboard
 ```
+
+### Migrations
+
+O projeto usa o Supabase CLI instalado nas dependências e está vinculado ao projeto `loafkhnjrwhppddwztof`.
+
+```bash
+npm run migration:new -- nome-da-alteracao
+npm run db:push:dry
+npm run db:push
+```
+
+Todo push na branch `main` executa as migrations antes do deploy pelo workflow do GitHub Pages. Para isso, o repositório precisa do secret `SUPABASE_ACCESS_TOKEN`. Credenciais nunca devem ser adicionadas aos arquivos versionados.
 
 O cadastro envia a URL da instalação atual ao Supabase por `emailRedirectTo`. Essa URL precisa estar na lista de Redirect URLs; caso contrário, o Supabase usa a Site URL como fallback.
 
@@ -48,8 +60,10 @@ npm run build
 ## Checklist implementado
 
 - Autenticação com Supabase Auth: cadastro, login, logout e rota privada.
-- Dashboard para listar e criar timelines.
-- Vínculo de outra pessoa por e-mail em uma timeline, desde que ela já tenha conta no app.
+- Dashboard em árvore, com uma timeline principal e timelines vinculadas de um nível.
+- Um único relacionamento e uma única pessoa vinculada por conta, com validação no Supabase.
+- Vínculo por e-mail com acesso de edição herdado pela timeline principal e suas filhas.
+- Página de perfil para editar nome, nascimento e biografia, visualizar a pessoa vinculada e compartilhar a data de início do relacionamento.
 - Timelines públicas ou privadas.
 - Rota `/timeline/:coupleId` com seletor de ano, cards responsivos e modal.
 - Rota `/timeline/:coupleId/novo-evento` para criar evento com data, título, descrição, música e fotos.
@@ -60,8 +74,7 @@ npm run build
 
 ## Pontos manuais
 
-- Rodar `supabase/schema.sql` no projeto Supabase.
 - Preencher variáveis de ambiente localmente e na Vercel.
 - Configurar URLs permitidas do Supabase Auth.
 - Opcional: desativar confirmação de e-mail no Supabase durante testes locais.
-- Para vincular sua namorada ou parceiro, a pessoa precisa primeiro criar conta com o e-mail que será informado no dashboard.
+- Para vincular sua namorada ou parceiro, a pessoa precisa primeiro criar conta com o e-mail que será informado na página de perfil.

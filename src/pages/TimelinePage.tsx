@@ -67,6 +67,7 @@ export function TimelinePage() {
           events={payload.events}
           years={payload.years}
           canEdit={payload.canEdit}
+          includesChildren={payload.includesChildren}
           onDeleted={() => void loadTimeline()}
         />
       ) : null}

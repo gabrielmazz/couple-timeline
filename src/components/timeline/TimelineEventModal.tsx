@@ -31,18 +31,18 @@ type PhotoPreview = {
 }
 
 export function TimelineEventModal({
-	coupleId,
 	event,
 	opened,
 	canEdit,
+	showSource,
 	onClose,
 	onDeleted,
 	onPhotoPreview,
 }: {
-	coupleId: string
 	event: TimelineEventWithPhotos | null
 	opened: boolean
 	canEdit: boolean
+	showSource: boolean
 	onClose: () => void
 	onDeleted: () => void
 	onPhotoPreview: (photo: PhotoPreview) => void
@@ -196,6 +196,11 @@ export function TimelineEventModal({
 								>
 									{formatDate(activeEvent.event_date)}
 								</Badge>
+								{showSource ? (
+									<Badge color="grape" variant="light">
+										{activeEvent.sourceTimeline.name}
+									</Badge>
+								) : null}
 								{activeEvent.category ? (
 									<Badge color="grape" variant="light">
 										{activeEvent.category}
@@ -312,7 +317,7 @@ export function TimelineEventModal({
 										variant="light"
 										color="pink"
 										leftSection={<Edit size={16} />}
-										onClick={() => navigate(`/timeline/${coupleId}/eventos/${activeEvent.id}/editar`)}
+										onClick={() => navigate(`/timeline/${activeEvent.couple_id}/eventos/${activeEvent.id}/editar`)}
 									>
 										Editar
 									</Button>

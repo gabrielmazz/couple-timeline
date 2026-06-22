@@ -1,15 +1,15 @@
 import { supabase } from '../supabase/client'
 import { createSignedUrlMap } from './storage'
-import type { Couple, CoupleMember, TimelineEvent, TimelinePhoto } from '../../types/database'
+import type { Couple, CoupleMember, CoupleRole, TimelineEvent, TimelinePhoto } from '../../types/database'
 import type {
-  CoupleListItem,
   TimelineEventWithPhotos,
   TimelinePayload,
   TimelinePhotoWithUrl,
+  TimelineTree,
 } from '../../types/timeline'
 
 type MemberCoupleRow = {
-  role: string
+  role: CoupleRole
   couples: Couple
 }
 
@@ -54,22 +54,55 @@ export async function ensureProfile(name?: string | null) {
   }
 }
 
-export async function listUserCouples(): Promise<CoupleListItem[]> {
+export async function getUserTimelineTree(): Promise<TimelineTree | null> {
   const user = await requireUser()
-  const { data, error } = await supabase
+  const { data: membershipData, error: membershipError } = await supabase
     .from('couple_members')
-    .select('role, couples!inner(id, name, slug, visibility, created_by, created_at)')
+    .select('role, couples!inner(*)')
     .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
+    .maybeSingle()
 
-  if (error) {
-    throw error
+  if (membershipError) {
+    throw membershipError
   }
 
-  return ((data ?? []) as unknown as MemberCoupleRow[]).map((row) => ({
-    ...row.couples,
-    memberRole: row.role,
-  }))
+  if (!membershipData) {
+    return null
+  }
+
+  const membership = membershipData as unknown as MemberCoupleRow
+  const root = membership.couples
+  const [childrenResult, partnerResult] = await Promise.all([
+    supabase
+      .from('couples')
+      .select('*')
+      .eq('parent_id', root.id)
+      .order('created_at', { ascending: true }),
+    supabase
+      .from('couple_members')
+      .select('id')
+      .eq('couple_id', root.id)
+      .eq('role', 'partner')
+      .maybeSingle(),
+  ])
+
+  if (childrenResult.error) {
+    throw childrenResult.error
+  }
+
+  if (partnerResult.error) {
+    throw partnerResult.error
+  }
+
+  return {
+    root: {
+      ...root,
+      memberRole: membership.role,
+    },
+    children: childrenResult.data ?? [],
+    memberRole: membership.role,
+    hasPartner: Boolean(partnerResult.data),
+  }
 }
 
 export async function getMembership(coupleId: string): Promise<CoupleMember | null> {
@@ -79,10 +112,24 @@ export async function getMembership(coupleId: string): Promise<CoupleMember | nu
     return null
   }
 
+  const { data: couple, error: coupleError } = await supabase
+    .from('couples')
+    .select('id, parent_id')
+    .eq('id', coupleId)
+    .maybeSingle()
+
+  if (coupleError) {
+    throw coupleError
+  }
+
+  if (!couple) {
+    return null
+  }
+
   const { data, error } = await supabase
     .from('couple_members')
     .select('*')
-    .eq('couple_id', coupleId)
+    .eq('couple_id', couple.parent_id ?? couple.id)
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -120,10 +167,28 @@ export async function getCouple(coupleId: string) {
 
 export async function fetchTimeline(coupleId: string): Promise<TimelinePayload> {
   const coupleAccess = await getCouple(coupleId)
+  const childTimelinesResult = coupleAccess.couple.parent_id
+    ? { data: [] as Couple[], error: null }
+    : await supabase
+        .from('couples')
+        .select('*')
+        .eq('parent_id', coupleId)
+        .order('created_at', { ascending: true })
+
+  if (childTimelinesResult.error) {
+    throw childTimelinesResult.error
+  }
+
+  const childTimelines = childTimelinesResult.data ?? []
+  const visibleTimelines = [coupleAccess.couple, ...childTimelines]
+  const timelinesById = new Map(visibleTimelines.map((timeline) => [timeline.id, timeline]))
   const { data, error } = await supabase
     .from('timeline_events')
     .select('*, timeline_photos(*)')
-    .eq('couple_id', coupleId)
+    .in(
+      'couple_id',
+      visibleTimelines.map((timeline) => timeline.id),
+    )
     .order('event_date', { ascending: true })
 
   if (error) {
@@ -137,6 +202,7 @@ export async function fetchTimeline(coupleId: string): Promise<TimelinePayload> 
   ])
   const signedUrls = await createSignedUrlMap(paths.filter((path): path is string => Boolean(path)))
   const events: TimelineEventWithPhotos[] = rows.map((event) => {
+    const sourceTimeline = timelinesById.get(event.couple_id) ?? coupleAccess.couple
     const photos: TimelinePhotoWithUrl[] = (event.timeline_photos ?? [])
       .slice()
       .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
@@ -152,6 +218,10 @@ export async function fetchTimeline(coupleId: string): Promise<TimelinePayload> 
       coverUrl: event.cover_photo_path
         ? signedUrls.get(event.cover_photo_path) ?? fallbackCover
         : fallbackCover,
+      sourceTimeline: {
+        id: sourceTimeline.id,
+        name: sourceTimeline.name,
+      },
     }
   })
   const years = Array.from(new Set(events.map((event) => event.year))).sort((a, b) => a - b)
@@ -160,6 +230,7 @@ export async function fetchTimeline(coupleId: string): Promise<TimelinePayload> 
     ...coupleAccess,
     events,
     years,
+    includesChildren: childTimelines.length > 0,
   }
 }
 
