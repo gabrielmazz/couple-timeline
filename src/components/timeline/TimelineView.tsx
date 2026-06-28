@@ -1,4 +1,4 @@
-import { Alert, Button, Group, Image, Modal, Stack, Text, Title } from '@mantine/core'
+import { Alert, Button, Group, Image, Modal, Stack, Text } from '@mantine/core'
 import { CalendarHeart, Plus } from 'lucide-react'
 import { useMemo, useState, type WheelEvent } from 'react'
 import { Link } from 'react-router-dom'
@@ -7,6 +7,9 @@ import type { TimelineEventWithPhotos } from '../../types/timeline'
 import { TimelineCard } from './TimelineCard'
 import { TimelineEventModal } from './TimelineEventModal'
 import { TimelineYearSelector, type TimelineSortOrder } from './TimelineYearSelector'
+
+import BlurText from '../ui/BlurText'
+import CSSBlurText from './../../components/ui/BlurText.module.css'
 
 type PhotoPreview = {
 	src: string
@@ -69,9 +72,16 @@ export function TimelineView({
 					<Text c="var(--palette-blush)" fw={800} tt="uppercase" size="xs">
 						Timeline {couple.visibility === 'public' ? 'pública' : 'privada'}
 					</Text>
-					<Title order={1} size="clamp(2.2rem, 7vw, 5.4rem)" lh={0.92}>
+					{/* <Title order={1} size="clamp(2.2rem, 7vw, 5.4rem)" lh={0.92}>
 						{couple.name}
-					</Title>
+					</Title> */}
+					<BlurText
+						text={couple.name}
+						delay={250}
+						animateBy="words"
+						direction="top"
+						className={CSSBlurText.titleBlurTextTimeLineCouple}
+					/>
 				</Stack>
 				{canEdit ? (
 					<Button

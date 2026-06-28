@@ -27,7 +27,7 @@ export function TimelineCard({
                     onClick()
                 }
             }}
-            style={{ overflow: 'hidden', cursor: 'pointer' }}
+            style={{ cursor: 'pointer' }}
         >
             {event.coverUrl ? (
                 <Image src={event.coverUrl} alt={event.title} className="timeline-card-image" />

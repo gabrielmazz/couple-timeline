@@ -63,6 +63,134 @@ img {
 
 .app-shell {
   min-height: 100vh;
+  position: relative;
+  isolation: isolate;
+  overflow-x: hidden;
+}
+
+.app-background,
+.app-background-scrim {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.app-background {
+  z-index: 0;
+  overflow: hidden;
+  opacity: 0.42;
+}
+
+.app-background-scrim {
+  z-index: 1;
+  background:
+    radial-gradient(circle at 16% 10%, rgba(226, 61, 117, 0.2), transparent 30rem),
+    radial-gradient(circle at 86% 20%, rgba(254, 184, 159, 0.14), transparent 26rem),
+    linear-gradient(180deg, rgba(10, 5, 10, 0.76) 0%, rgba(19, 9, 18, 0.62) 42%, rgba(8, 5, 8, 0.9) 100%);
+}
+
+.grid-motion-root,
+.grid-motion-stage {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.grid-motion-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle, var(--grid-motion-gradient) 0%, transparent 100%);
+  contain: layout paint style;
+}
+
+.grid-motion-board {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-rows: repeat(4, minmax(180px, 1fr));
+  gap: 16px;
+  width: 150vw;
+  height: 150vh;
+  transform: rotate(-15deg);
+  transform-origin: center;
+  backface-visibility: hidden;
+}
+
+.grid-motion-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(240px, 1fr));
+  gap: 16px;
+  animation: grid-motion-row-forward 34s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+.grid-motion-row:nth-child(even) {
+  animation-name: grid-motion-row-backward;
+}
+
+.grid-motion-row:nth-child(2) {
+  animation-duration: 42s;
+}
+
+.grid-motion-row:nth-child(3) {
+  animation-duration: 38s;
+}
+
+.grid-motion-row:nth-child(4) {
+  animation-duration: 46s;
+}
+
+.grid-motion-cell {
+  min-width: 0;
+  min-height: 0;
+}
+
+.grid-motion-card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 180px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #111;
+  color: #fff;
+  contain: layout paint;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.grid-motion-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  user-select: none;
+}
+
+.grid-motion-content {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  min-height: 100%;
+  place-items: center;
+  padding: 16px;
+  text-align: center;
+  font-size: 1.5rem;
+}
+
+.text-type-cursor {
+  animation: text-type-cursor-blink 0.5s ease-in-out infinite alternate;
+}
+
+.app-header,
+.app-main {
+  position: relative;
+}
+
+.app-main {
+  z-index: 2;
 }
 
 .app-header {
@@ -203,7 +331,20 @@ img {
 }
 
 .timeline-card {
+  --timeline-stack-border-angle: 0deg;
   scroll-snap-align: start;
+  overflow: hidden;
+  border: 2px solid transparent;
+  background:
+    linear-gradient(145deg, rgba(42, 18, 39, 0.92), rgba(27, 12, 25, 0.96)) padding-box,
+    conic-gradient(
+      from var(--timeline-stack-border-angle),
+      rgba(226, 61, 117, 0.95),
+      rgba(253, 207, 191, 0.86),
+      rgba(116, 35, 101, 0.72),
+      rgba(254, 184, 159, 0.88),
+      rgba(226, 61, 117, 0.95)
+    ) border-box;
 }
 
 .timeline-card-image {
@@ -284,6 +425,48 @@ img {
   cursor: zoom-out;
 }
 
+.timeline-event-modal-content {
+  position: relative;
+  padding: 2px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
+}
+
+.timeline-event-modal-content::before {
+  content: '';
+  position: absolute;
+  inset: -55%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle, rgba(255, 247, 244, 0.98) 0 1px, transparent 2px),
+    conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      rgba(226, 61, 117, 0.95) 58deg,
+      rgba(253, 207, 191, 0.96) 86deg,
+      transparent 122deg,
+      transparent 180deg,
+      rgba(116, 35, 101, 0.9) 226deg,
+      rgba(254, 184, 159, 0.92) 258deg,
+      transparent 306deg
+    );
+  background-size: 84px 84px, 100% 100%;
+  opacity: 0.72;
+}
+
+.timeline-event-modal-body {
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  color: inherit;
+  border: 1px solid rgba(253, 207, 191, 0.2);
+  border-radius: 8px;
+  background: var(--app-panel-solid);
+}
+
 .timeline-event-modal-close {
   position: absolute;
   top: 14px;
@@ -301,6 +484,46 @@ img {
 .timeline-event-photo-button:focus-visible {
   outline: 2px solid var(--palette-blush);
   outline-offset: -4px;
+}
+
+.timeline-event-stack-card {
+  --timeline-stack-border-angle: 0deg;
+  border: 2px solid transparent;
+  background:
+    linear-gradient(145deg, rgba(55, 22, 48, 0.94), rgba(26, 11, 24, 0.98)) padding-box,
+    conic-gradient(
+      from var(--timeline-stack-border-angle),
+      rgba(226, 61, 117, 0.95),
+      rgba(253, 207, 191, 0.88),
+      rgba(116, 35, 101, 0.72),
+      rgba(254, 184, 159, 0.9),
+      rgba(226, 61, 117, 0.95)
+    ) border-box;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.26);
+  overflow: visible;
+}
+
+.timeline-event-scroll-stack {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.timeline-event-scroll-stack::-webkit-scrollbar {
+  display: none;
+}
+
+.timeline-event-folder-group {
+  position: relative;
+  z-index: 2;
+  margin-top: 42px;
+}
+
+.timeline-event-stack-title {
+  margin: 0;
+  color: #fff7f4;
+  font-size: clamp(1.35rem, 1.6vw, 1.8rem);
+  font-weight: 700;
+  line-height: 1.12;
 }
 
 .mobile-year-marker {
@@ -331,7 +554,119 @@ img {
   border-radius: 0;
 }
 
+@property --timeline-stack-border-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes star-movement-bottom {
+  0% {
+    transform: translate(0%, 0%);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translate(-100%, 0%);
+    opacity: 0;
+  }
+}
+
+@keyframes star-movement-top {
+  0% {
+    transform: translate(0%, 0%);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translate(100%, 0%);
+    opacity: 0;
+  }
+}
+
+@keyframes timeline-event-modal-star-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@keyframes timeline-stack-border-spin {
+  to {
+    --timeline-stack-border-angle: 360deg;
+  }
+}
+
+@keyframes text-type-cursor-blink {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes grid-motion-row-forward {
+  from {
+    transform: translate3d(-8%, 0, 0);
+  }
+
+  to {
+    transform: translate3d(8%, 0, 0);
+  }
+}
+
+@keyframes grid-motion-row-backward {
+  from {
+    transform: translate3d(8%, 0, 0);
+  }
+
+  to {
+    transform: translate3d(-8%, 0, 0);
+  }
+}
+
+.animate-star-movement-bottom {
+  animation: star-movement-bottom linear infinite alternate;
+}
+
+.animate-star-movement-top {
+  animation: star-movement-top linear infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .grid-motion-row,
+  .timeline-event-modal-content::before,
+  .animate-star-movement-bottom,
+  .animate-star-movement-top {
+    animation: none;
+  }
+
+  .timeline-event-modal-content::before,
+  .animate-star-movement-bottom,
+  .animate-star-movement-top {
+    opacity: 0.35;
+  }
+}
+
 @media (max-width: 760px) {
+  .grid-motion-board {
+    grid-template-rows: repeat(4, minmax(190px, 1fr));
+    gap: 14px;
+    width: 280vw;
+    height: 150vh;
+    transform: rotate(-12deg);
+  }
+
+  .grid-motion-row {
+    grid-template-columns: repeat(4, minmax(170px, 1fr));
+    gap: 14px;
+  }
+
+  .grid-motion-card {
+    min-height: 220px;
+  }
+
   .app-container {
     width: min(100% - 24px, 1180px);
   }
@@ -421,5 +756,16 @@ img {
 
   .mobile-year-marker {
     display: inline-flex;
+  }
+
+  .timeline-event-modal-content {
+    padding: 3px;
+    min-height: 100vh;
+    border-radius: 0;
+  }
+
+  .timeline-event-modal-body {
+    min-height: calc(100vh - 6px);
+    border-radius: 0;
   }
 }

@@ -27,4 +27,7 @@ dist-ssr
 *.db
 *.sqlite
 *.sqlite3
-# *.env
+# Environment files (keep local credentials out of Git)
+.env
+.env.*
+!.env.example
