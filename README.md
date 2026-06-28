@@ -49,6 +49,20 @@ Todo push na branch `main` executa as migrations antes do deploy pelo workflow d
 
 O cadastro envia a URL da instalação atual ao Supabase por `emailRedirectTo`. Essa URL precisa estar na lista de Redirect URLs; caso contrário, o Supabase usa a Site URL como fallback.
 
+## Deploy no GitHub Pages
+
+O app precisa ser publicado pelo workflow do GitHub Actions, porque o Vite gera os arquivos finais dentro de `dist`. Se o GitHub Pages estiver configurado para publicar a branch `main` na pasta `/`, ele vai servir o `index.html` de desenvolvimento e a tela fica branca.
+
+No GitHub, configure **Settings > Pages > Build and deployment > Source** como **GitHub Actions**. O workflow `.github/workflows/deploy-pages.yml` compila o projeto, copia `dist/index.html` para `dist/404.html` para suportar rotas SPA e publica o artefato `dist`.
+
+Secrets necessários no repositório:
+
+```bash
+VITE_SUPABASE_URL=
+VITE_SUPABASE_PUBLISHABLE_KEY=
+SUPABASE_ACCESS_TOKEN=
+```
+
 ## Comandos usados
 
 ```bash
