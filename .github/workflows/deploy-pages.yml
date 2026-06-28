@@ -68,6 +68,9 @@ jobs:
           test -n "$VITE_SUPABASE_URL" || (echo "Missing VITE_SUPABASE_URL" && exit 1)
           test -n "$VITE_SUPABASE_PUBLISHABLE_KEY" || (echo "Missing VITE_SUPABASE_PUBLISHABLE_KEY" && exit 1)
 
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
       - name: Build
         run: npm run build
 
