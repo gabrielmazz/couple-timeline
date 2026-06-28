@@ -1,14 +1,17 @@
 import { Alert, Button, Container, Group, Loader, Stack } from '@mantine/core'
 import { RefreshCcw } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { useAppBackground } from '../components/layout/AppBackgroundContext'
 import { TimelineView } from '../components/timeline/TimelineView'
+import { getTimelineBackgroundImages } from '../lib/timeline/background'
 import { fetchTimeline } from '../lib/timeline/queries'
 import { getErrorMessage } from '../lib/utils'
 import type { TimelinePayload } from '../types/timeline'
 
 export function TimelinePage() {
   const { coupleId } = useParams()
+  const { setBackgroundImages } = useAppBackground()
   const [payload, setPayload] = useState<TimelinePayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -40,6 +43,20 @@ export function TimelinePage() {
 
     return () => window.clearTimeout(timer)
   }, [loadTimeline])
+
+  const timelineBackgroundImages = useMemo(() => {
+    if (!payload) {
+      return []
+    }
+
+    return getTimelineBackgroundImages(payload.events)
+  }, [payload])
+
+  useEffect(() => {
+    setBackgroundImages(timelineBackgroundImages)
+
+    return () => setBackgroundImages([])
+  }, [setBackgroundImages, timelineBackgroundImages])
 
   return (
     <Container size="lg">

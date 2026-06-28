@@ -2,12 +2,10 @@ import {
 	ActionIcon,
 	Badge,
 	Button,
-	Divider,
 	Group,
 	Image,
 	Modal,
 	ScrollArea,
-	SimpleGrid,
 	Stack,
 	Text,
 	Title,
@@ -24,6 +22,12 @@ import { deleteTimelineEvent } from '../../lib/timeline/actions'
 import { formatDate, getErrorMessage } from '../../lib/utils'
 import type { TimelineEventWithPhotos } from '../../types/timeline'
 import { MusicEmbed } from './MusicEmbed'
+
+import BlurText from './../../components/ui/BlurText'
+import CSSBlurText from './../../components/ui/BlurText.module.css'
+import Folder from './../../components/ui/Folder'
+import ScrollStack, { ScrollStackItem } from './../../components/ui/ScrollStack'
+import TextType from './../../components/ui/TextType'
 
 type PhotoPreview = {
 	src: string
@@ -52,6 +56,7 @@ export function TimelineEventModal({
 	const [deleting, setDeleting] = useState(false)
 	const [embla, setEmbla] = useState<EmblaCarouselType | null>(null)
 	const photoSlides = event?.photos.filter((photo) => photo.signedUrl) ?? []
+	const folderPreviewPhotos = photoSlides.slice(0, 6)
 
 	useEffect(() => {
 		if (!opened || photoSlides.length < 2 || !embla) {
@@ -118,12 +123,16 @@ export function TimelineEventModal({
 			radius={8}
 			padding={0}
 			withCloseButton={false}
+			classNames={{
+				content: 'timeline-event-modal-content',
+				body: 'timeline-event-modal-body',
+			}}
 			styles={{
-				content: { background: 'var(--app-panel-solid)' },
+				content: { background: 'transparent' },
 				body: { padding: 0 },
 			}}
 		>
-			<ScrollArea.Autosize mah={isMobile ? '100vh' : '86vh'}>
+			<ScrollArea.Autosize mah={isMobile ? 'calc(100vh - 6px)' : '86vh'}>
 				<Stack gap={0} pos="relative">
 					<ActionIcon
 						className="timeline-event-modal-close"
@@ -141,7 +150,7 @@ export function TimelineEventModal({
 							emblaOptions={{ loop: true }}
 							getEmblaApi={setEmbla}
 						>
-							{photoSlides.map((photo) => (
+							{photoSlides.map((photo, index) => (
 								<Carousel.Slide key={photo.id}>
 									<button
 										type="button"
@@ -159,6 +168,8 @@ export function TimelineEventModal({
 											alt={photo.caption || activeEvent.title}
 											h="100%"
 											fit="cover"
+											loading={index === 0 ? 'eager' : 'lazy'}
+											decoding="async"
 										/>
 									</button>
 								</Carousel.Slide>
@@ -182,136 +193,218 @@ export function TimelineEventModal({
 								alt={photoSlides[0].caption || activeEvent.title}
 								h="100%"
 								fit="cover"
+								loading="eager"
+								decoding="async"
 							/>
 						</button>
 					) : null}
 
 					<Stack gap="lg" p={{ base: 'md', sm: 'xl' }}>
 						<Stack gap="sm">
-							<Group gap="xs">
-								<Badge
-									color="pink"
-									variant="light"
-									leftSection={<CalendarDays size={13} />}
-								>
-									{formatDate(activeEvent.event_date)}
-								</Badge>
-								{showSource ? (
-									<Badge color="grape" variant="light">
-										{activeEvent.sourceTimeline.name}
-									</Badge>
-								) : null}
-								{activeEvent.category ? (
-									<Badge color="grape" variant="light">
-										{activeEvent.category}
-									</Badge>
-								) : null}
-							</Group>
-							<Title order={2}>{activeEvent.title}</Title>
+							<BlurText
+								segments={[
+									<Badge
+										key="date"
+										color="pink"
+										variant="light"
+										leftSection={<CalendarDays size={13} />}
+									>
+										{formatDate(activeEvent.event_date)}
+									</Badge>,
+									showSource ? (
+										<Badge key="source" color="grape" variant="light">
+											{activeEvent.sourceTimeline.name}
+										</Badge>
+									) : null,
+									activeEvent.category ? (
+										<Badge key="category" color="grape" variant="light">
+											{activeEvent.category}
+										</Badge>
+									) : null,
+								].filter(Boolean)}
+								delay={100}
+								direction="top"
+								className={CSSBlurText.badgesBlurText}
+							/>
+
+							<BlurText
+								text={activeEvent.title}
+								delay={250}
+								animateBy="words"
+								direction="top"
+								className={CSSBlurText.titleBlurText}
+							/>
+
 							{activeEvent.subtitle ? (
-								<Text size="lg" c="var(--palette-blush)" fw={500}>
-									{activeEvent.subtitle}
-								</Text>
+								<BlurText
+									text={activeEvent.subtitle}
+									delay={150}
+									animateBy="words"
+									direction="bottom"
+									className={CSSBlurText.subtitleBlurText}
+								/>
 							) : null}
+
 							{activeEvent.event_time || activeEvent.location_name ? (
 								<Group gap="lg" c="dimmed">
 									{activeEvent.event_time ? (
-										<Group gap={6}>
-											<Clock3 size={17} />
-											<Text size="sm">{activeEvent.event_time}</Text>
-										</Group>
+										<BlurText
+											segments={[
+												<Clock3 key="icon" size={17} />,
+												'\u00A0',
+												...activeEvent.event_time.split(''),
+											]}
+											delay={50}
+											animateBy="letters"
+											direction="bottom"
+											className={CSSBlurText.infoBlurText}
+										/>
 									) : null}
 									{activeEvent.location_name ? (
-										<Group gap={6}>
-											<MapPin size={17} />
-											<Text size="sm">{activeEvent.location_name}</Text>
-										</Group>
+										<BlurText
+											segments={[
+												<MapPin key="icon" size={17} />,
+												'\u00A0',
+												...activeEvent.location_name
+													.split(' ')
+													.flatMap((word, index) => (index === 0 ? [word] : ['\u00A0', word])),
+											]}
+											delay={50}
+											animateBy="words"
+											direction="bottom"
+											className={CSSBlurText.infoBlurText}
+										/>
 									) : null}
 								</Group>
 							) : null}
 							{activeEvent.tags?.length ? (
-								<Group gap={6}>
-									{activeEvent.tags.map((tag) => (
+								<BlurText
+									segments={activeEvent.tags.map((tag) => (
 										<Badge key={tag} color="gray" variant="outline">
 											{tag}
 										</Badge>
 									))}
-								</Group>
+									delay={80}
+									direction="bottom"
+									className={CSSBlurText.tagsBlurText}
+								/>
 							) : null}
 							{activeEvent.description ? (
-								<Text c="dimmed" lh={1.7} mt="xs" style={{ whiteSpace: 'pre-wrap' }}>
-									{activeEvent.description}
-								</Text>
+								<TextType
+									text={activeEvent.description}
+									typingSpeed={20}
+									pauseDuration={1500}
+									showCursor
+									cursorCharacter="●"
+									loop={false}
+									deletingSpeed={50}
+									cursorBlinkDuration={0.5}
+								/>
 							) : null}
 						</Stack>
 
-
-
-						{activeEvent.photos.length > 1 ? (
-							<>
-								<Divider
-									label="❤"
-									size="sm"
-									color="var(--palette-blush)"
-									styles={{
-										label: { color: 'var(--palette-blush)' },
-									}}
-								/>
-
-								<SimpleGrid cols={{ base: 2, sm: 3 }} spacing="sm">
-									{activeEvent.photos.map((photo) =>
-										photo.signedUrl ? (
-											<button
-												key={photo.id}
-												type="button"
-												className="timeline-event-photo-button"
-												style={{ height: 130, borderRadius: 8 }}
-												aria-label={`Ampliar imagem ${photo.caption || activeEvent.title}`}
-												onClick={() =>
-													onPhotoPreview({
-														src: photo.signedUrl!,
-														alt: photo.caption || activeEvent.title,
-													})
-												}
+						{photoSlides.length > 1 || activeEvent.music_url ? (
+							<ScrollStack
+								className="timeline-event-scroll-stack"
+								itemDistance={isMobile ? 24 : 32}
+								itemStackDistance={isMobile ? 16 : 22}
+								stackPosition="8%"
+								scaleEndPosition="4%"
+								baseScale={0.9}
+								itemScale={0.04}
+								blurAmount={0}
+								style={{ height: isMobile ? 300 : 350 }}
+								innerStyle={{
+									minHeight: 'auto',
+									padding: isMobile ? '8px 0 48px' : '8px 8px 56px',
+								}}
+							>
+								{photoSlides.length > 1 ? (
+									<ScrollStackItem
+										itemClassName="timeline-event-stack-card"
+										itemStyle={{
+											height: isMobile ? 178 : 210,
+											margin: '0 0 18px',
+											padding: isMobile ? 16 : 24,
+											borderRadius: 8,
+										}}
+									>
+										<Stack h="100%" justify="flex-start" gap={0}>
+											<Title
+												order={3}
+												className="timeline-event-stack-title"
 											>
-												<Image
-													src={photo.signedUrl}
-													alt={photo.caption || activeEvent.title}
-													radius={8}
-													h="100%"
-													fit="cover"
-												/>
-											</button>
-										) : null,
-									)}
-								</SimpleGrid>
-							</>
-						) : null}
+												Imagens do evento
+											</Title>
 
-						{activeEvent.music_url ? (
-							<>
-								<Divider
-									label="𝄞"
-									size="sm"
-									color="var(--palette-blush)"
-									styles={{
-										label: { color: 'var(--palette-blush)' },
-									}}
-								/>
-								<MusicEmbed url={activeEvent.music_url} />
-							</>
+											<Group className="timeline-event-folder-group" justify="center">
+												<Folder
+													color="var(--palette-rose)"
+													size={isMobile ? 1 : 1.35}
+													items={folderPreviewPhotos.map((photo) => (
+														<button
+															key={photo.id}
+															type="button"
+															className="timeline-event-photo-button"
+															style={{
+																width: '100%',
+																height: '100%',
+																borderRadius: 10,
+																overflow: 'hidden',
+															}}
+															aria-label={`Ampliar imagem ${photo.caption || activeEvent.title}`}
+															onClick={(event) => {
+																event.stopPropagation()
+																onPhotoPreview({
+																	src: photo.signedUrl!,
+																	alt: photo.caption || activeEvent.title,
+																})
+															}}
+														>
+															<Image
+																src={photo.signedUrl}
+																alt={photo.caption || activeEvent.title}
+																h="100%"
+																w="100%"
+																fit="cover"
+																loading="lazy"
+																decoding="async"
+															/>
+														</button>
+													))}
+												/>
+											</Group>
+										</Stack>
+									</ScrollStackItem>
+								) : null}
+
+								{activeEvent.music_url ? (
+									<ScrollStackItem
+										itemClassName="timeline-event-stack-card"
+										itemStyle={{
+											height: isMobile ? 230 : 260,
+											margin: '0 0 18px',
+											padding: isMobile ? 16 : 24,
+											borderRadius: 8,
+										}}
+									>
+										<Stack h="100%" justify="space-between" gap="md">
+											<Title
+												order={3}
+												className="timeline-event-stack-title"
+											>
+												Trilha sonora
+											</Title>
+
+											<MusicEmbed url={activeEvent.music_url} />
+										</Stack>
+									</ScrollStackItem>
+								) : null}
+							</ScrollStack>
 						) : null}
 
 						{canEdit ? (
 							<>
-								<Divider
-									label="❤"
-									size="sm"
-									color="var(--palette-blush)"
-									styles={{
-										label: { color: 'var(--palette-blush)' },
-									}}
-								/>
 								<Group justify="flex-end" grow >
 									<Button
 										variant="light"

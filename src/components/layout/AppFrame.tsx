@@ -18,9 +18,12 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/auth-context'
 import { isSupabaseConfigured, supabase } from '../../lib/supabase/client'
+import GridMotion from '../ui/GridMotion'
+import { useAppBackground } from './AppBackgroundContext'
 
 export function AppFrame({ children }: { children: React.ReactNode }) {
 	const { user } = useAuth()
+	const { backgroundImages } = useAppBackground()
 	const navigate = useNavigate()
 	const [opened, setOpened] = useState(false)
 
@@ -83,6 +86,15 @@ export function AppFrame({ children }: { children: React.ReactNode }) {
 
 	return (
 		<Box className="app-shell">
+			{backgroundImages.length > 0 ? (
+				<>
+					<Box className="app-background" aria-hidden="true">
+						<GridMotion items={backgroundImages} gradientColor="rgba(19, 9, 18, 0.92)" />
+					</Box>
+					<Box className="app-background-scrim" aria-hidden="true" />
+				</>
+			) : null}
+
 			<Box className="app-header">
 				<Container size="lg" py="sm">
 					<Group justify="space-between" wrap="nowrap">
@@ -117,7 +129,7 @@ export function AppFrame({ children }: { children: React.ReactNode }) {
 				</Container>
 			) : null}
 
-			<main>{children}</main>
+			<main className="app-main">{children}</main>
 		</Box>
 	)
 }

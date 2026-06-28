@@ -20,9 +20,11 @@ import { notifications } from '@mantine/notifications'
 import { CalendarHeart, HeartHandshake, Save, UserPlus, UserRound } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useAppBackground } from '../components/layout/AppBackgroundContext'
 import { addCoupleMemberByEmail } from '../lib/timeline/actions'
 import { updateRelationshipDetails, updateUserProfile } from '../lib/profile/actions'
 import { getProfilePageData } from '../lib/profile/queries'
+import { fetchTimelineBackgroundImages } from '../lib/timeline/queries'
 import { getErrorMessage } from '../lib/utils'
 import type { ProfilePageData } from '../types/profile'
 
@@ -35,6 +37,7 @@ function formatOptionalDate(value: string | null) {
 }
 
 export function ProfilePage() {
+  const { setBackgroundImages } = useAppBackground()
   const [data, setData] = useState<ProfilePageData | null>(null)
   const [loading, setLoading] = useState(true)
   const [savingProfile, setSavingProfile] = useState(false)
@@ -72,6 +75,33 @@ export function ProfilePage() {
 
     return () => window.clearTimeout(timer)
   }, [loadProfile])
+
+  useEffect(() => {
+    const timelineId = data?.tree?.root.id
+    let ignore = false
+
+    if (!timelineId) {
+      setBackgroundImages([])
+      return () => setBackgroundImages([])
+    }
+
+    void fetchTimelineBackgroundImages(timelineId)
+      .then((images) => {
+        if (!ignore) {
+          setBackgroundImages(images)
+        }
+      })
+      .catch(() => {
+        if (!ignore) {
+          setBackgroundImages([])
+        }
+      })
+
+    return () => {
+      ignore = true
+      setBackgroundImages([])
+    }
+  }, [data?.tree?.root.id, setBackgroundImages])
 
   async function handleSaveProfile() {
     setSavingProfile(true)
