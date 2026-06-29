@@ -44,7 +44,7 @@ npm run db:push:dry
 npm run db:push
 ```
 
-Todo push na branch `main` executa as migrations antes do deploy pelo workflow do GitHub Pages. Para isso, o repositório precisa dos secrets `SUPABASE_ACCESS_TOKEN` e `SUPABASE_DB_PASSWORD`. Credenciais nunca devem ser adicionadas aos arquivos versionados.
+Todo push na branch `main` executa as migrations antes do deploy pelo workflow do GitHub Pages. Para isso, o repositório precisa do secret `SUPABASE_ACCESS_TOKEN`. O secret `SUPABASE_DB_PASSWORD` é opcional e será usado pelo workflow quando existir. Credenciais nunca devem ser adicionadas aos arquivos versionados.
 
 O cadastro envia a URL da instalação atual ao Supabase por `emailRedirectTo`. Essa URL precisa estar na lista de Redirect URLs; caso contrário, o Supabase usa a Site URL como fallback.
 
@@ -63,7 +63,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY=
 
 # Secrets:
 SUPABASE_ACCESS_TOKEN=
-SUPABASE_DB_PASSWORD=
+SUPABASE_DB_PASSWORD= # opcional, recomendado se o Supabase CLI exigir senha do banco
 ```
 
 O workflow falha antes do deploy se essas variáveis estiverem ausentes. Isso evita publicar uma versão do Vite sem Supabase configurado.
