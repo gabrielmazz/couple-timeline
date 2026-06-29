@@ -1,16 +1,22 @@
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from '../../types/database'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
-const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
-const supabaseKey = supabasePublishableKey || supabaseAnonKey
+// Public browser configuration. Never put service-role secrets in frontend code.
+const defaultSupabaseUrl = 'https://loafkhnjrwhppddwztof.supabase.co'
+const defaultSupabasePublishableKey = 'sb_publishable_qnWJFeTv7zv3C-R4XLsHsw_xBG243OT'
+
+const envSupabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
+const envSupabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined
+const envSupabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
+
+const supabaseUrl = envSupabaseUrl || defaultSupabaseUrl
+const supabaseKey = envSupabasePublishableKey || envSupabaseAnonKey || defaultSupabasePublishableKey
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseKey)
 
 export const supabase = createClient<Database>(
-  supabaseUrl || 'https://placeholder.supabase.co',
-  supabaseKey || 'placeholder-publishable-key',
+  supabaseUrl,
+  supabaseKey,
   {
     auth: {
       persistSession: true,
