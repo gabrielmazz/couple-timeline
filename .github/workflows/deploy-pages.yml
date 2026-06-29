@@ -88,11 +88,6 @@ jobs:
       - name: Validate repository hygiene
         run: npm run check:env
 
-      - name: Validate production build configuration
-        run: |
-          test -n "$VITE_SUPABASE_URL" || (echo "Missing VITE_SUPABASE_URL" && exit 1)
-          test -n "$VITE_SUPABASE_PUBLISHABLE_KEY" || (echo "Missing VITE_SUPABASE_PUBLISHABLE_KEY" && exit 1)
-
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 

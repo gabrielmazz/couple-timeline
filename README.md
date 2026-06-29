@@ -6,18 +6,18 @@ MVP em Vite + React + TypeScript + Mantine + Supabase para criar timelines de ca
 
 ```bash
 npm install
-cp .env.example .env
 npm run dev
 ```
 
-Preencha no `.env`:
+O `.env` é opcional. Crie um apenas quando quiser sobrescrever a configuração pública padrão em desenvolvimento local:
 
 ```bash
+cp .env.example .env
 VITE_SUPABASE_URL=
 VITE_SUPABASE_PUBLISHABLE_KEY=
 ```
 
-O `.env` é apenas local e não deve ser commitado. Use `.env.example` como modelo.
+O `.env` não deve ser commitado. Use `.env.example` como modelo quando precisar apontar para outro projeto Supabase.
 
 ## Supabase
 
@@ -57,16 +57,12 @@ No GitHub, configure **Settings > Pages > Build and deployment > Source** como *
 Configure no GitHub, em **Settings > Secrets and variables > Actions**:
 
 ```bash
-# Variables ou Secrets:
-VITE_SUPABASE_URL=
-VITE_SUPABASE_PUBLISHABLE_KEY=
-
 # Secrets:
 SUPABASE_ACCESS_TOKEN=
 SUPABASE_DB_PASSWORD= # opcional, recomendado se o Supabase CLI exigir senha do banco
 ```
 
-O workflow falha antes do deploy se essas variáveis estiverem ausentes. Isso evita publicar uma versão do Vite sem Supabase configurado.
+O deploy do GitHub Pages não depende de `.env`. O app usa a URL e a chave publicável do Supabase configuradas no client; `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY` só são necessárias se você quiser sobrescrever esse destino no GitHub Actions.
 
 ## Fluxo seguro de PR e merge
 
@@ -102,8 +98,8 @@ npm run build
 
 ## Pontos manuais
 
-- Preencher variáveis de ambiente localmente e na Vercel.
-- Preencher variáveis/secrets no GitHub Actions para Pages.
+- Preencher variáveis de ambiente localmente e na Vercel apenas se precisar sobrescrever a configuração pública padrão.
+- Preencher `SUPABASE_ACCESS_TOKEN` no GitHub Actions para Pages.
 - Configurar URLs permitidas do Supabase Auth.
 - Opcional: desativar confirmação de e-mail no Supabase durante testes locais.
 - Para vincular sua namorada ou parceiro, a pessoa precisa primeiro criar conta com o e-mail que será informado na página de perfil.
