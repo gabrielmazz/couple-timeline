@@ -56,7 +56,6 @@ export function TimelineEventModal({
 	const [deleting, setDeleting] = useState(false)
 	const [embla, setEmbla] = useState<EmblaCarouselType | null>(null)
 	const photoSlides = event?.photos.filter((photo) => photo.signedUrl) ?? []
-	const folderPreviewPhotos = photoSlides.slice(0, 6)
 
 	useEffect(() => {
 		if (!opened || photoSlides.length < 2 || !embla) {
@@ -150,7 +149,7 @@ export function TimelineEventModal({
 							emblaOptions={{ loop: true }}
 							getEmblaApi={setEmbla}
 						>
-							{photoSlides.map((photo, index) => (
+							{photoSlides.map((photo) => (
 								<Carousel.Slide key={photo.id}>
 									<button
 										type="button"
@@ -168,8 +167,6 @@ export function TimelineEventModal({
 											alt={photo.caption || activeEvent.title}
 											h="100%"
 											fit="cover"
-											loading={index === 0 ? 'eager' : 'lazy'}
-											decoding="async"
 										/>
 									</button>
 								</Carousel.Slide>
@@ -193,8 +190,6 @@ export function TimelineEventModal({
 								alt={photoSlides[0].caption || activeEvent.title}
 								h="100%"
 								fit="cover"
-								loading="eager"
-								decoding="async"
 							/>
 						</button>
 					) : null}
@@ -312,7 +307,7 @@ export function TimelineEventModal({
 								scaleEndPosition="4%"
 								baseScale={0.9}
 								itemScale={0.04}
-								blurAmount={0}
+								blurAmount={0.35}
 								style={{ height: isMobile ? 300 : 350 }}
 								innerStyle={{
 									minHeight: 'auto',
@@ -341,7 +336,7 @@ export function TimelineEventModal({
 												<Folder
 													color="var(--palette-rose)"
 													size={isMobile ? 1 : 1.35}
-													items={folderPreviewPhotos.map((photo) => (
+													items={photoSlides.map((photo) => (
 														<button
 															key={photo.id}
 															type="button"
@@ -367,8 +362,6 @@ export function TimelineEventModal({
 																h="100%"
 																w="100%"
 																fit="cover"
-																loading="lazy"
-																decoding="async"
 															/>
 														</button>
 													))}

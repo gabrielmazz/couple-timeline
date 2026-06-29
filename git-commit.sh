@@ -38,6 +38,19 @@ alert() { echo -e "${BOLD}${RED}⛔ $*${RESET}"; }
 # --------------------- Git helpers --------------------------
 current_branch() { git rev-parse --abbrev-ref HEAD; }
 
+list_env_status_files() {
+  git status --porcelain -- .env '.env.*' | awk '{print $2}' | grep -v '^.env.example$' || true
+}
+
+unstage_env_files() {
+  local file
+  while IFS= read -r file; do
+    [[ -n "$file" ]] || continue
+    git reset -q -- "$file" || true
+    warn "Arquivo de ambiente mantido fora do commit: ${file}"
+  done < <(git diff --cached --name-only -- .env '.env.*' | grep -v '^.env.example$' || true)
+}
+
 # =====================[ Pré-checagens ]======================
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "Este diretório não é um repositório Git."
 
@@ -90,6 +103,13 @@ step "Resumo de alterações (git status --short):"
 git status --short
 echo ""
 
+ENV_STATUS_FILES="$(list_env_status_files)"
+if [[ -n "${ENV_STATUS_FILES}" ]]; then
+  warn "Arquivos de ambiente detectados. Eles não serão adicionados ao commit:"
+  echo "${ENV_STATUS_FILES}"
+  echo ""
+fi
+
 # Contagens úteis
 TOTAL_CHANGED=$(git status --porcelain | wc -l | tr -d ' ')
 if [[ "${TOTAL_CHANGED}" -eq 0 ]]; then
@@ -118,6 +138,7 @@ if [[ "${TOTAL_CHANGED}" -gt 0 ]]; then
   step "Adicionar alterações ao index (git add .)"
   if confirm "Adicionar tudo (git add .)? [s/N] "; then
     git add .
+    unstage_env_files
     ok "Arquivos adicionados ao index."
   else
     warn "Pulado 'git add '."

@@ -66,12 +66,20 @@ const BlurText: React.FC<BlurTextProps> = ({
     return () => observer.disconnect();
   }, [threshold, rootMargin]);
 
-  const defaultFrom = useMemo(() => (direction === 'top' ? { opacity: 0, y: -18 } : { opacity: 0, y: 18 }), [direction]);
+  const defaultFrom = useMemo(
+    () =>
+      direction === 'top' ? { filter: 'blur(10px)', opacity: 0, y: -50 } : { filter: 'blur(10px)', opacity: 0, y: 50 },
+    [direction]
+  );
 
   const defaultTo = useMemo(
     () => [
-      { opacity: 0.72, y: direction === 'top' ? 3 : -3 },
-      { opacity: 1, y: 0 }
+      {
+        filter: 'blur(5px)',
+        opacity: 0.5,
+        y: direction === 'top' ? 5 : -5
+      },
+      { filter: 'blur(0px)', opacity: 1, y: 0 }
     ],
     [direction]
   );
@@ -82,11 +90,12 @@ const BlurText: React.FC<BlurTextProps> = ({
   const stepCount = toSnapshots.length + 1;
   const totalDuration = stepDuration * (stepCount - 1);
   const times = Array.from({ length: stepCount }, (_, i) => (stepCount === 1 ? 0 : i / (stepCount - 1)));
-  const animateKeyframes = buildKeyframes(fromSnapshot, toSnapshots);
 
   return (
     <p ref={ref} className={`blur-text ${className} flex flex-wrap`}>
       {elements.map((segment, index) => {
+        const animateKeyframes = buildKeyframes(fromSnapshot, toSnapshots);
+
         const spanTransition: Transition = {
           duration: totalDuration,
           times,
@@ -104,7 +113,7 @@ const BlurText: React.FC<BlurTextProps> = ({
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              willChange: 'transform, opacity'
+              willChange: 'transform, filter, opacity'
             }}
           >
             {segment === ' ' ? '\u00A0' : segment}

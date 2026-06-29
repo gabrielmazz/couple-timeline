@@ -1,12 +1,8 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
-import { BACKGROUND_IMAGE_LIMIT, selectBackgroundItems } from '../../lib/timeline/background'
 import { AppBackgroundContext } from './AppBackgroundContext'
 
 function normalizeImages(images: string[]) {
-	return selectBackgroundItems(
-		images.map((image) => image.trim()).filter(Boolean),
-		BACKGROUND_IMAGE_LIMIT,
-	)
+	return Array.from(new Set(images.map((image) => image.trim()).filter(Boolean)))
 }
 
 export function AppBackgroundProvider({ children }: { children: ReactNode }) {

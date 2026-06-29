@@ -4,13 +4,6 @@ export const TIMELINE_BUCKET = 'timeline-photos'
 export const MAX_IMAGE_SIZE = 5 * 1024 * 1024
 export const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
 
-type ImageTransformOptions = {
-  width?: number
-  height?: number
-  resize?: 'cover' | 'contain' | 'fill'
-  quality?: number
-}
-
 export function validateImageFile(file: File) {
   if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
     return 'Use apenas imagens JPG, PNG ou WebP.'
@@ -92,10 +85,10 @@ export async function removeEventImages(paths: string[]) {
   }
 }
 
-export async function createSignedUrl(path: string, transform?: ImageTransformOptions) {
+export async function createSignedUrl(path: string) {
   const { data, error } = await supabase.storage
     .from(TIMELINE_BUCKET)
-    .createSignedUrl(path, 60 * 60, transform ? { transform } : undefined)
+    .createSignedUrl(path, 60 * 60)
 
   if (error) {
     return null
@@ -104,19 +97,11 @@ export async function createSignedUrl(path: string, transform?: ImageTransformOp
   return data.signedUrl
 }
 
-export async function createSignedUrlMap(paths: string[], transform?: ImageTransformOptions) {
+export async function createSignedUrlMap(paths: string[]) {
   const uniquePaths = Array.from(new Set(paths.filter(Boolean)))
 
   if (uniquePaths.length === 0) {
     return new Map<string, string | null>()
-  }
-
-  if (transform) {
-    const signedUrls = await Promise.all(
-      uniquePaths.map(async (path) => [path, await createSignedUrl(path, transform)] as const),
-    )
-
-    return new Map(signedUrls)
   }
 
   const { data, error } = await supabase.storage

@@ -3,8 +3,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAppBackground } from '../components/layout/AppBackgroundContext'
 import { EventForm } from '../components/timeline/EventForm'
-import { getPhotoBackgroundImages } from '../lib/timeline/background'
-import { fetchEventForEdit, fetchTimelineBackgroundImages, getCouple } from '../lib/timeline/queries'
+import { getPhotoBackgroundImages, getTimelineBackgroundImages } from '../lib/timeline/background'
+import { fetchEventForEdit, fetchTimeline, getCouple } from '../lib/timeline/queries'
 import { getErrorMessage } from '../lib/utils'
 import type { TimelineEvent } from '../types/database'
 import type { TimelinePhotoWithUrl } from '../types/timeline'
@@ -38,7 +38,8 @@ export function EventEditorPage({ mode }: { mode: 'create' | 'edit' }) {
           throw new Error('Você não tem permissão para criar eventos nesta timeline.')
         }
 
-        setBackgroundImages(await fetchTimelineBackgroundImages(coupleId))
+        const payload = await fetchTimeline(coupleId)
+        setBackgroundImages(getTimelineBackgroundImages(payload.events))
       } else {
         if (!eventId) {
           throw new Error('Evento inválido.')

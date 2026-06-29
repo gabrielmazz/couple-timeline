@@ -1,5 +1,4 @@
 import { supabase } from '../supabase/client'
-import { BACKGROUND_IMAGE_LIMIT, selectBackgroundItems } from './background'
 import { createSignedUrlMap } from './storage'
 import type { Couple, CoupleMember, CoupleRole, TimelineEvent, TimelinePhoto } from '../../types/database'
 import type {
@@ -16,10 +15,6 @@ type MemberCoupleRow = {
 
 type EventWithPhotosRow = TimelineEvent & {
   timeline_photos: TimelinePhoto[] | null
-}
-
-type EventWithPhotoPathsRow = Pick<TimelineEvent, 'cover_photo_path'> & {
-  timeline_photos: Pick<TimelinePhoto, 'storage_path' | 'position'>[] | null
 }
 
 export async function getCurrentUser() {
@@ -237,54 +232,6 @@ export async function fetchTimeline(coupleId: string): Promise<TimelinePayload> 
     years,
     includesChildren: childTimelines.length > 0,
   }
-}
-
-export async function fetchTimelineBackgroundImages(coupleId: string, limit = BACKGROUND_IMAGE_LIMIT) {
-  const coupleAccess = await getCouple(coupleId)
-  const childTimelinesResult = coupleAccess.couple.parent_id
-    ? { data: [] as Couple[], error: null }
-    : await supabase
-        .from('couples')
-        .select('id')
-        .eq('parent_id', coupleId)
-        .order('created_at', { ascending: true })
-
-  if (childTimelinesResult.error) {
-    throw childTimelinesResult.error
-  }
-
-  const visibleTimelineIds = [
-    coupleAccess.couple.id,
-    ...((childTimelinesResult.data ?? []) as Pick<Couple, 'id'>[]).map((timeline) => timeline.id),
-  ]
-
-  const { data, error } = await supabase
-    .from('timeline_events')
-    .select('cover_photo_path, timeline_photos(storage_path, position)')
-    .in('couple_id', visibleTimelineIds)
-    .order('event_date', { ascending: false })
-    .limit(Math.max(limit, 1))
-
-  if (error) {
-    throw error
-  }
-
-  const paths = ((data ?? []) as unknown as EventWithPhotoPathsRow[]).flatMap((event) => [
-    event.cover_photo_path,
-    ...(event.timeline_photos ?? [])
-      .slice()
-      .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
-      .map((photo) => photo.storage_path),
-  ])
-  const selectedPaths = selectBackgroundItems(paths.filter((path): path is string => Boolean(path)), limit)
-  const signedUrls = await createSignedUrlMap(selectedPaths, {
-    width: 720,
-    height: 540,
-    resize: 'cover',
-    quality: 62,
-  })
-
-  return selectedPaths.map((path) => signedUrls.get(path)).filter((url): url is string => Boolean(url))
 }
 
 export async function fetchEventForEdit(coupleId: string, eventId: string) {

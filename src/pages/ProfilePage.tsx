@@ -24,7 +24,8 @@ import { useAppBackground } from '../components/layout/AppBackgroundContext'
 import { addCoupleMemberByEmail } from '../lib/timeline/actions'
 import { updateRelationshipDetails, updateUserProfile } from '../lib/profile/actions'
 import { getProfilePageData } from '../lib/profile/queries'
-import { fetchTimelineBackgroundImages } from '../lib/timeline/queries'
+import { getTimelineBackgroundImages } from '../lib/timeline/background'
+import { fetchTimeline } from '../lib/timeline/queries'
 import { getErrorMessage } from '../lib/utils'
 import type { ProfilePageData } from '../types/profile'
 
@@ -85,10 +86,10 @@ export function ProfilePage() {
       return () => setBackgroundImages([])
     }
 
-    void fetchTimelineBackgroundImages(timelineId)
-      .then((images) => {
+    void fetchTimeline(timelineId)
+      .then((payload) => {
         if (!ignore) {
-          setBackgroundImages(images)
+          setBackgroundImages(getTimelineBackgroundImages(payload.events))
         }
       })
       .catch(() => {
