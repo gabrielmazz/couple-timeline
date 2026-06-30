@@ -1,10 +1,10 @@
 import { Alert, Container, Group, Loader, Stack } from '@mantine/core'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAppBackground } from '../components/layout/AppBackgroundContext'
 import { EventForm } from '../components/timeline/EventForm'
-import { getPhotoBackgroundImages, getTimelineBackgroundImages } from '../lib/timeline/background'
-import { fetchEventForEdit, fetchTimeline, getCouple } from '../lib/timeline/queries'
+import { getPhotoBackgroundImages } from '../lib/timeline/background'
+import { fetchEventForEdit, fetchTimelineTreeBackgroundImages, getCouple } from '../lib/timeline/queries'
 import { getErrorMessage } from '../lib/utils'
 import type { TimelineEvent } from '../types/database'
 import type { TimelinePhotoWithUrl } from '../types/timeline'
@@ -15,10 +15,15 @@ type EditableEvent = TimelineEvent & {
 
 export function EventEditorPage({ mode }: { mode: 'create' | 'edit' }) {
   const { coupleId, eventId } = useParams()
-  const { setBackgroundImages } = useAppBackground()
+  const { backgroundImages, setBackgroundImages, loadCachedBackgroundImages } = useAppBackground()
+  const backgroundImagesRef = useRef(backgroundImages)
   const [event, setEvent] = useState<EditableEvent | undefined>(undefined)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    backgroundImagesRef.current = backgroundImages
+  }, [backgroundImages])
 
   const load = useCallback(async () => {
     if (!coupleId) {
@@ -32,14 +37,15 @@ export function EventEditorPage({ mode }: { mode: 'create' | 'edit' }) {
 
     try {
       if (mode === 'create') {
-        const { canEdit } = await getCouple(coupleId)
+        const { couple, canEdit } = await getCouple(coupleId)
 
         if (!canEdit) {
           throw new Error('Você não tem permissão para criar eventos nesta timeline.')
         }
 
-        const payload = await fetchTimeline(coupleId)
-        setBackgroundImages(getTimelineBackgroundImages(payload.events))
+        const rootId = couple.parent_id ?? couple.id
+
+        loadCachedBackgroundImages(`timeline-tree:${rootId}`, () => fetchTimelineTreeBackgroundImages(rootId))
       } else {
         if (!eventId) {
           throw new Error('Evento inválido.')
@@ -48,15 +54,16 @@ export function EventEditorPage({ mode }: { mode: 'create' | 'edit' }) {
         const editableEvent = await fetchEventForEdit(coupleId, eventId)
 
         setEvent(editableEvent)
-        setBackgroundImages(getPhotoBackgroundImages(editableEvent.photos))
+        if (backgroundImagesRef.current.length === 0) {
+          setBackgroundImages(getPhotoBackgroundImages(editableEvent.photos))
+        }
       }
     } catch (loadError) {
-      setBackgroundImages([])
       setError(getErrorMessage(loadError, 'Não foi possível carregar o formulário.'))
     } finally {
       setLoading(false)
     }
-  }, [coupleId, eventId, mode, setBackgroundImages])
+  }, [coupleId, eventId, loadCachedBackgroundImages, mode, setBackgroundImages])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -65,10 +72,6 @@ export function EventEditorPage({ mode }: { mode: 'create' | 'edit' }) {
 
     return () => window.clearTimeout(timer)
   }, [load])
-
-  useEffect(() => {
-    return () => setBackgroundImages([])
-  }, [setBackgroundImages])
 
   if (!coupleId) {
     return null

@@ -1,4 +1,5 @@
 import { supabase } from '../supabase/client'
+import { getBackgroundImagesFromUrls } from './background'
 import { createSignedUrlMap } from './storage'
 import type { Couple, CoupleMember, CoupleRole, TimelineEvent, TimelinePhoto } from '../../types/database'
 import type {
@@ -15,6 +16,12 @@ type MemberCoupleRow = {
 
 type EventWithPhotosRow = TimelineEvent & {
   timeline_photos: TimelinePhoto[] | null
+}
+
+type BackgroundPhotoPathRow = Pick<TimelinePhoto, 'storage_path' | 'position'>
+
+type BackgroundEventRow = Pick<TimelineEvent, 'cover_photo_path'> & {
+  timeline_photos: BackgroundPhotoPathRow[] | null
 }
 
 export async function getCurrentUser() {
@@ -103,6 +110,52 @@ export async function getUserTimelineTree(): Promise<TimelineTree | null> {
     memberRole: membership.role,
     hasPartner: Boolean(partnerResult.data),
   }
+}
+
+export async function fetchTimelineBackgroundImages(coupleIds: string[]) {
+  const uniqueCoupleIds = Array.from(new Set(coupleIds.filter(Boolean)))
+
+  if (uniqueCoupleIds.length === 0) {
+    return []
+  }
+
+  const { data, error } = await supabase
+    .from('timeline_events')
+    .select('cover_photo_path, timeline_photos(storage_path, position)')
+    .in('couple_id', uniqueCoupleIds)
+    .order('event_date', { ascending: true })
+
+  if (error) {
+    throw error
+  }
+
+  const rows = (data ?? []) as unknown as BackgroundEventRow[]
+  const paths = rows.flatMap((event) => [
+    event.cover_photo_path,
+    ...(event.timeline_photos ?? [])
+      .slice()
+      .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+      .map((photo) => photo.storage_path),
+  ])
+  const signedUrls = await createSignedUrlMap(paths.filter((path): path is string => Boolean(path)))
+
+  return getBackgroundImagesFromUrls(paths.map((path) => (path ? signedUrls.get(path) : null)))
+}
+
+export async function fetchTimelineTreeBackgroundImages(rootCoupleId: string) {
+  const { couple } = await getCouple(rootCoupleId)
+  const rootId = couple.parent_id ?? couple.id
+  const { data, error } = await supabase
+    .from('couples')
+    .select('id')
+    .eq('parent_id', rootId)
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    throw error
+  }
+
+  return fetchTimelineBackgroundImages([rootId, ...(data ?? []).map((timeline) => timeline.id)])
 }
 
 export async function getMembership(coupleId: string): Promise<CoupleMember | null> {

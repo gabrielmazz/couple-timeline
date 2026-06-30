@@ -11,6 +11,7 @@
   --app-muted: rgba(255, 241, 237, 0.66);
   --app-text: #fff7f4;
   --app-danger: #ff6b6b;
+  --app-header-height: 64px;
   --app-font-family: 'Roboto Condensed', ui-sans-serif, system-ui, -apple-system,
     BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-synthesis: none;
@@ -66,6 +67,7 @@ img {
   position: relative;
   isolation: isolate;
   overflow-x: hidden;
+  padding-top: var(--app-header-height);
 }
 
 .app-background,
@@ -109,6 +111,22 @@ img {
 
 .app-main {
   z-index: 2;
+}
+
+.app-menu-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--app-text);
+  line-height: 1;
+  text-decoration: none;
+}
+
+.app-menu-logo span {
+  font-size: 1.08rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .app-header {
@@ -263,20 +281,58 @@ img {
       rgba(254, 184, 159, 0.88),
       rgba(226, 61, 117, 0.95)
     ) border-box;
-  animation: timeline-stack-border-spin 8s linear infinite;
+  contain: layout;
+}
+
+.timeline-stats-card {
+  width: 100%;
+}
+
+.timeline-card-image-shell {
+  position: relative;
+  display: grid;
+  aspect-ratio: 16 / 10;
+  width: 100%;
+  overflow: hidden;
+  color: var(--app-muted);
+  background:
+    linear-gradient(135deg, rgba(253, 207, 191, 0.1), rgba(226, 61, 117, 0.09)),
+    #1d0d1b;
+}
+
+.timeline-card-image-placeholder {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent, rgba(255, 247, 244, 0.08), transparent),
+    radial-gradient(circle at 22% 18%, rgba(253, 207, 191, 0.12), transparent 36%),
+    linear-gradient(135deg, rgba(49, 20, 43, 0.96), rgba(24, 11, 23, 0.98));
 }
 
 .timeline-card-image {
-  aspect-ratio: 16 / 10;
+  position: absolute;
+  inset: 0;
+  height: 100%;
   width: 100%;
   object-fit: cover;
+  opacity: 0;
   filter: grayscale(0.8) contrast(1.06) brightness(0.82);
   transition:
+    opacity 180ms ease,
     filter 180ms ease,
     transform 180ms ease;
 }
 
-.timeline-card:hover .timeline-card-image {
+.timeline-card-image--loaded {
+  opacity: 1;
+}
+
+.timeline-card-image-fallback {
+  place-items: center;
+}
+
+.timeline-card:hover .timeline-card-image--loaded,
+.timeline-card:focus-within .timeline-card-image--loaded {
   filter: grayscale(0.15) contrast(1.02) brightness(0.92);
   transform: scale(1.015);
 }
@@ -294,6 +350,51 @@ img {
 
 .timeline-event-photo-button--hero {
   height: 100%;
+}
+
+.timeline-event-photo-button > .timeline-event-image-shell {
+  height: 100%;
+}
+
+.timeline-event-image-shell {
+  position: relative;
+  display: grid;
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden;
+  color: var(--app-muted);
+  background:
+    radial-gradient(circle at 28% 18%, rgba(253, 207, 191, 0.13), transparent 34%),
+    linear-gradient(135deg, rgba(49, 20, 43, 0.96), rgba(24, 11, 23, 0.98));
+}
+
+.timeline-event-image-placeholder {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent, rgba(255, 247, 244, 0.08), transparent),
+    linear-gradient(135deg, rgba(49, 20, 43, 0.96), rgba(24, 11, 23, 0.98));
+}
+
+.timeline-event-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.timeline-event-image--loaded {
+  opacity: 1;
+}
+
+.timeline-event-image-fallback {
+  position: absolute;
+  inset: 0;
+  padding: 16px;
+  text-align: center;
 }
 
 .event-photo-sortable {
@@ -386,6 +487,15 @@ img {
   background: var(--app-panel-solid);
 }
 
+.timeline-event-modal-scroll {
+  max-height: 86vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--palette-rose) rgba(255, 255, 255, 0.08);
+  -webkit-overflow-scrolling: touch;
+}
+
 .timeline-event-modal-close {
   position: absolute;
   top: 14px;
@@ -417,10 +527,9 @@ img {
       rgba(116, 35, 101, 0.72),
       rgba(254, 184, 159, 0.9),
       rgba(226, 61, 117, 0.95)
-    ) border-box;
+  ) border-box;
   box-shadow: 0 18px 46px rgba(0, 0, 0, 0.26);
   overflow: visible;
-  animation: timeline-stack-border-spin 7s linear infinite;
 }
 
 .timeline-event-scroll-stack {
@@ -444,6 +553,34 @@ img {
   font-size: clamp(1.35rem, 1.6vw, 1.8rem);
   font-weight: 700;
   line-height: 1.12;
+}
+
+.timeline-event-mobile-title {
+  color: #fff7f4;
+  font-size: 2rem;
+  line-height: 1.08;
+}
+
+.timeline-event-description {
+  white-space: pre-wrap;
+}
+
+.timeline-event-mobile-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.timeline-event-mobile-photo {
+  aspect-ratio: 1;
+  border-radius: 8px;
+}
+
+.timeline-event-mobile-panel {
+  padding: 0px;
+  border: 1px solid rgba(253, 207, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(35, 15, 32, 0.82);
 }
 
 .mobile-year-marker {
@@ -510,12 +647,6 @@ img {
   }
 }
 
-@keyframes timeline-stack-border-spin {
-  to {
-    --timeline-stack-border-angle: 360deg;
-  }
-}
-
 .animate-star-movement-bottom {
   animation: star-movement-bottom linear infinite alternate;
 }
@@ -525,6 +656,8 @@ img {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .timeline-card,
+  .timeline-event-stack-card,
   .timeline-event-modal-content::before,
   .animate-star-movement-bottom,
   .animate-star-movement-top {
@@ -539,6 +672,11 @@ img {
 }
 
 @media (max-width: 760px) {
+  .glass-panel {
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
+    backdrop-filter: none;
+  }
+
   .grid-motion-board {
     width: 340vw;
     height: 150vh;
@@ -626,6 +764,16 @@ img {
   .timeline-card {
     position: relative;
     scroll-snap-align: unset;
+    animation: none;
+    background:
+      linear-gradient(145deg, rgba(42, 18, 39, 0.96), rgba(27, 12, 25, 0.98)) padding-box,
+      linear-gradient(135deg, rgba(226, 61, 117, 0.72), rgba(253, 207, 191, 0.52)) border-box;
+  }
+
+  .timeline-card:hover .timeline-card-image--loaded,
+  .timeline-card:focus-within .timeline-card-image--loaded {
+    filter: grayscale(0.8) contrast(1.06) brightness(0.82);
+    transform: none;
   }
 
   .timeline-card::before {
@@ -648,10 +796,34 @@ img {
     padding: 3px;
     min-height: 100vh;
     border-radius: 0;
+    background: var(--app-panel-solid);
+    box-shadow: none;
+  }
+
+  .timeline-event-modal-content::before {
+    display: none;
   }
 
   .timeline-event-modal-body {
     min-height: calc(100vh - 6px);
     border-radius: 0;
+  }
+
+  .timeline-event-modal-scroll {
+    max-height: calc(100vh - 6px);
+    scroll-behavior: auto;
+  }
+
+  .timeline-event-modal-close {
+    background: rgba(15, 8, 13, 0.72);
+    backdrop-filter: none;
+  }
+
+  .timeline-event-mobile-hero {
+    height: 320px;
+  }
+
+  .timeline-event-stack-card {
+    animation: none;
   }
 }

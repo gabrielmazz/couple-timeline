@@ -24,8 +24,7 @@ import { useAppBackground } from '../components/layout/AppBackgroundContext'
 import { addCoupleMemberByEmail } from '../lib/timeline/actions'
 import { updateRelationshipDetails, updateUserProfile } from '../lib/profile/actions'
 import { getProfilePageData } from '../lib/profile/queries'
-import { getTimelineBackgroundImages } from '../lib/timeline/background'
-import { fetchTimeline } from '../lib/timeline/queries'
+import { fetchTimelineBackgroundImages } from '../lib/timeline/queries'
 import { getErrorMessage } from '../lib/utils'
 import type { ProfilePageData } from '../types/profile'
 
@@ -38,7 +37,7 @@ function formatOptionalDate(value: string | null) {
 }
 
 export function ProfilePage() {
-  const { setBackgroundImages } = useAppBackground()
+  const { backgroundImages, loadCachedBackgroundImages } = useAppBackground()
   const [data, setData] = useState<ProfilePageData | null>(null)
   const [loading, setLoading] = useState(true)
   const [savingProfile, setSavingProfile] = useState(false)
@@ -78,31 +77,15 @@ export function ProfilePage() {
   }, [loadProfile])
 
   useEffect(() => {
-    const timelineId = data?.tree?.root.id
-    let ignore = false
-
-    if (!timelineId) {
-      setBackgroundImages([])
-      return () => setBackgroundImages([])
+    if (!data?.tree || backgroundImages.length > 0) {
+      return
     }
 
-    void fetchTimeline(timelineId)
-      .then((payload) => {
-        if (!ignore) {
-          setBackgroundImages(getTimelineBackgroundImages(payload.events))
-        }
-      })
-      .catch(() => {
-        if (!ignore) {
-          setBackgroundImages([])
-        }
-      })
+    const cacheKey = `timeline-tree:${data.tree.root.id}`
+    const timelineIds = [data.tree.root.id, ...data.tree.children.map((timeline) => timeline.id)]
 
-    return () => {
-      ignore = true
-      setBackgroundImages([])
-    }
-  }, [data?.tree?.root.id, setBackgroundImages])
+    loadCachedBackgroundImages(cacheKey, () => fetchTimelineBackgroundImages(timelineIds))
+  }, [backgroundImages.length, data?.tree, loadCachedBackgroundImages])
 
   async function handleSaveProfile() {
     setSavingProfile(true)

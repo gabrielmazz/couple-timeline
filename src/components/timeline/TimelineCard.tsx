@@ -1,17 +1,63 @@
-import { Badge, Card, Group, Image, Stack, Text, Title } from '@mantine/core'
+import { Badge, Card, Group, Stack, Text, Title } from '@mantine/core'
 import { CalendarDays, Clock3, ImageOff, MapPin } from 'lucide-react'
+import { memo, useCallback, useState } from 'react'
 import { compactText, formatDate } from '../../lib/utils'
 import type { TimelineEventWithPhotos } from '../../types/timeline'
 
-export function TimelineCard({
-    event,
-    showSource,
-    onClick,
-}: {
+type TimelineCardProps = {
     event: TimelineEventWithPhotos
     showSource: boolean
-    onClick: () => void
-}) {
+    priority?: boolean
+    onSelect: (event: TimelineEventWithPhotos) => void
+}
+
+type TimelineCardImageProps = {
+    alt: string
+    priority: boolean
+    src: string
+}
+
+function TimelineCardImage({ alt, priority, src }: TimelineCardImageProps) {
+    const [imageState, setImageState] = useState({ failed: false, loaded: false, src })
+    const loaded = imageState.src === src && imageState.loaded
+    const failed = imageState.src === src && imageState.failed
+
+    if (failed) {
+        return (
+            <Stack className="timeline-card-image-shell timeline-card-image-fallback" align="center" justify="center">
+                <ImageOff size={34} />
+                <Text size="sm">Imagem indisponível</Text>
+            </Stack>
+        )
+    }
+
+    return (
+        <div className="timeline-card-image-shell" aria-busy={!loaded}>
+            <div className="timeline-card-image-placeholder" aria-hidden="true" />
+            <img
+                src={src}
+                alt={alt}
+                className={`timeline-card-image${loaded ? ' timeline-card-image--loaded' : ''}`}
+                loading={priority ? 'eager' : 'lazy'}
+                fetchPriority={priority ? 'high' : 'auto'}
+                decoding="async"
+                onLoad={() => setImageState({ failed: false, loaded: true, src })}
+                onError={() => setImageState({ failed: true, loaded: false, src })}
+            />
+        </div>
+    )
+}
+
+function TimelineCardComponent({
+    event,
+    showSource,
+    priority = false,
+    onSelect,
+}: TimelineCardProps) {
+    const handleSelect = useCallback(() => {
+        onSelect(event)
+    }, [event, onSelect])
+
     return (
         <Card
             className="timeline-card glass-panel"
@@ -20,24 +66,22 @@ export function TimelineCard({
             withBorder
             role="button"
             tabIndex={0}
-            onClick={onClick}
+            onClick={handleSelect}
             onKeyDown={(keyboardEvent) => {
                 if (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ') {
                     keyboardEvent.preventDefault()
-                    onClick()
+                    handleSelect()
                 }
             }}
             style={{ cursor: 'pointer' }}
         >
             {event.coverUrl ? (
-                <Image src={event.coverUrl} alt={event.title} className="timeline-card-image" />
+                <TimelineCardImage src={event.coverUrl} alt={event.title} priority={priority} />
             ) : (
                 <Stack
-                    className="timeline-card-image"
+                    className="timeline-card-image-shell timeline-card-image-fallback"
                     align="center"
                     justify="center"
-                    bg="rgba(255,255,255,0.06)"
-                    c="dimmed"
                 >
                     <ImageOff size={34} />
                     <Text size="sm">Sem imagem</Text>
@@ -117,3 +161,5 @@ export function TimelineCard({
         </Card>
     )
 }
+
+export const TimelineCard = memo(TimelineCardComponent)

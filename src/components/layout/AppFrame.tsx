@@ -1,92 +1,27 @@
 import {
 	Alert,
-	Anchor,
-	Badge,
 	Box,
-	Burger,
-	Button,
-	Collapse,
 	Container,
-	Group,
-	Menu,
-	Text,
-	UnstyledButton,
 } from '@mantine/core'
-import { notifications } from '@mantine/notifications'
-import { Heart, LogOut, UserRound } from 'lucide-react'
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { useAuth } from '../auth/auth-context'
-import { isSupabaseConfigured, supabase } from '../../lib/supabase/client'
+import { useMediaQuery } from '@mantine/hooks'
+import { useLocation } from 'react-router-dom'
+import { isSupabaseConfigured } from '../../lib/supabase/client'
 import GridMotion from '../ui/GridMotion'
+import { AppNavigationMenu } from './AppNavigationMenu'
 import { useAppBackground } from './AppBackgroundContext'
 
 export function AppFrame({ children }: { children: React.ReactNode }) {
-	const { user } = useAuth()
 	const { backgroundImages } = useAppBackground()
-	const navigate = useNavigate()
-	const [opened, setOpened] = useState(false)
-
-	async function handleLogout() {
-		const { error } = await supabase.auth.signOut()
-
-		if (error) {
-			notifications.show({
-				color: 'red',
-				title: 'Não foi possível sair',
-				message: error.message,
-			})
-			return
-		}
-
-		navigate('/login')
-	}
-
-	const nav = user ? (
-		<Group gap="xs">
-			<Button component={Link} to="/dashboard" variant="subtle" color="pink">
-				Dashboard
-			</Button>
-			<Menu position="bottom-end" withArrow>
-				<Menu.Target>
-					<UnstyledButton aria-label="Abrir menu da conta">
-						<Badge
-							size="lg"
-							radius={8}
-							variant="light"
-							color="pink"
-							leftSection={<UserRound size={14} />}
-						>
-							{user.email}
-						</Badge>
-					</UnstyledButton>
-				</Menu.Target>
-				<Menu.Dropdown>
-					<Menu.Label>Conta</Menu.Label>
-					<Menu.Item component={Link} to="/perfil" leftSection={<UserRound size={16} />}>
-						Perfil e relacionamento
-					</Menu.Item>
-					<Menu.Divider />
-					<Menu.Item color="red" leftSection={<LogOut size={16} />} onClick={handleLogout}>
-						Sair
-					</Menu.Item>
-				</Menu.Dropdown>
-			</Menu>
-		</Group>
-	) : (
-		<Group gap="xs">
-			<Button component={Link} to="/login" variant="subtle" color="pink">
-				Entrar
-			</Button>
-			<Button component={Link} to="/register" color="pink">
-				Criar conta
-			</Button>
-		</Group>
-	)
+	const location = useLocation()
+	const isDesktop = useMediaQuery('(min-width: 48em)')
+	const canShowTimelineBackground =
+		location.pathname === '/dashboard' ||
+		location.pathname === '/perfil' ||
+		location.pathname.startsWith('/timeline/')
 
 	return (
 		<Box className="app-shell">
-			{backgroundImages.length > 0 ? (
+			{backgroundImages.length > 0 && isDesktop && canShowTimelineBackground ? (
 				<>
 					<Box className="app-background" aria-hidden="true">
 						<GridMotion items={backgroundImages} gradientColor="rgba(19, 9, 18, 0.92)" />
@@ -95,30 +30,7 @@ export function AppFrame({ children }: { children: React.ReactNode }) {
 				</>
 			) : null}
 
-			<Box className="app-header">
-				<Container size="lg" py="sm">
-					<Group justify="space-between" wrap="nowrap">
-						<Anchor component={Link} to="/" c="white" underline="never">
-							<Group gap="xs" wrap="nowrap">
-								<Heart size={22} color="var(--palette-rose)" fill="var(--palette-rose)" />
-								<Text fw={800} size="lg" tt="uppercase" style={{ lineHeight: 1, letterSpacing: '0.12em' }}>
-									Moments
-								</Text>
-							</Group>
-						</Anchor>
-						<Box visibleFrom="sm">{nav}</Box>
-						<Burger
-							hiddenFrom="sm"
-							opened={opened}
-							onClick={() => setOpened((value) => !value)}
-							aria-label="Abrir navegação"
-						/>
-					</Group>
-					<Collapse expanded={opened}>
-						<Box py="md">{nav}</Box>
-					</Collapse>
-				</Container>
-			</Box>
+			<AppNavigationMenu />
 
 			{!isSupabaseConfigured ? (
 				<Container size="lg" mt="md">

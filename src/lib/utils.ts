@@ -27,6 +27,15 @@ export function getYearFromDate(dateValue: string) {
   return new Date(`${dateValue}T00:00:00`).getFullYear()
 }
 
+export function getRelationshipDays(startedAt: string) {
+  const [year, month, day] = startedAt.split('-').map(Number)
+  const today = new Date()
+  const startTimestamp = Date.UTC(year, month - 1, day)
+  const todayTimestamp = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())
+
+  return Math.max(1, Math.floor((todayTimestamp - startTimestamp) / 86_400_000) + 1)
+}
+
 export function compactText(value: string | null | undefined, maxLength = 140) {
   if (!value) {
     return ''

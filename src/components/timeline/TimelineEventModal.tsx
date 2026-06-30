@@ -3,9 +3,7 @@ import {
 	Badge,
 	Button,
 	Group,
-	Image,
 	Modal,
-	ScrollArea,
 	Stack,
 	Text,
 	Title,
@@ -34,6 +32,92 @@ type PhotoPreview = {
 	alt: string
 }
 
+type ModalPhoto = TimelineEventWithPhotos['photos'][number]
+
+function EventModalPhoto({
+	alt,
+	className = '',
+	priority = false,
+	src,
+}: {
+	alt: string
+	className?: string
+	priority?: boolean
+	src: string
+}) {
+	const [imageState, setImageState] = useState({ failed: false, loaded: false, src })
+	const loaded = imageState.src === src && imageState.loaded
+	const failed = imageState.src === src && imageState.failed
+
+	return (
+		<div className={`timeline-event-image-shell ${className}`} aria-busy={!loaded && !failed}>
+			<div className="timeline-event-image-placeholder" aria-hidden="true" />
+			{failed ? (
+				<Stack className="timeline-event-image-fallback" align="center" justify="center">
+					<Text size="sm" c="dimmed">
+						Imagem indisponível
+					</Text>
+				</Stack>
+			) : (
+				<img
+					src={src}
+					alt={alt}
+					className={`timeline-event-image${loaded ? ' timeline-event-image--loaded' : ''}`}
+					loading={priority ? 'eager' : 'lazy'}
+					fetchPriority={priority ? 'high' : 'auto'}
+					decoding="async"
+					onLoad={() => setImageState({ failed: false, loaded: true, src })}
+					onError={() => setImageState({ failed: true, loaded: false, src })}
+				/>
+			)}
+		</div>
+	)
+}
+
+function MobilePhotoGrid({
+	eventTitle,
+	onPhotoPreview,
+	photos,
+}: {
+	eventTitle: string
+	onPhotoPreview: (photo: PhotoPreview) => void
+	photos: ModalPhoto[]
+}) {
+	if (photos.length <= 1) {
+		return null
+	}
+
+	return (
+		<Stack gap="sm">
+			<Title order={3} className="timeline-event-stack-title">
+				Fotos do evento
+			</Title>
+			<div className="timeline-event-mobile-photo-grid">
+				{photos.map((photo, index) => (
+					<button
+						key={photo.id}
+						type="button"
+						className="timeline-event-photo-button timeline-event-mobile-photo"
+						aria-label={`Ampliar imagem ${photo.caption || eventTitle}`}
+						onClick={() =>
+							onPhotoPreview({
+								src: photo.signedUrl!,
+								alt: photo.caption || eventTitle,
+							})
+						}
+					>
+						<EventModalPhoto
+							src={photo.signedUrl!}
+							alt={photo.caption || eventTitle}
+							priority={index < 2}
+						/>
+					</button>
+				))}
+			</div>
+		</Stack>
+	)
+}
+
 export function TimelineEventModal({
 	event,
 	opened,
@@ -58,7 +142,7 @@ export function TimelineEventModal({
 	const photoSlides = event?.photos.filter((photo) => photo.signedUrl) ?? []
 
 	useEffect(() => {
-		if (!opened || photoSlides.length < 2 || !embla) {
+		if (isMobile || !opened || photoSlides.length < 2 || !embla) {
 			return undefined
 		}
 
@@ -67,7 +151,7 @@ export function TimelineEventModal({
 		}, 4200)
 
 		return () => window.clearInterval(autoplay)
-	}, [embla, opened, photoSlides.length])
+	}, [embla, isMobile, opened, photoSlides.length])
 
 	if (!event) {
 		return null
@@ -131,7 +215,7 @@ export function TimelineEventModal({
 				body: { padding: 0 },
 			}}
 		>
-			<ScrollArea.Autosize mah={isMobile ? 'calc(100vh - 6px)' : '86vh'}>
+			<div className="timeline-event-modal-scroll">
 				<Stack gap={0} pos="relative">
 					<ActionIcon
 						className="timeline-event-modal-close"
@@ -142,14 +226,32 @@ export function TimelineEventModal({
 						<X size={20} />
 					</ActionIcon>
 
-					{photoSlides.length > 1 ? (
+					{isMobile && photoSlides[0] ? (
+						<button
+							type="button"
+							className="timeline-event-photo-button timeline-event-photo-button--hero timeline-event-mobile-hero"
+							aria-label={`Ampliar imagem ${photoSlides[0].caption || activeEvent.title}`}
+							onClick={() =>
+								onPhotoPreview({
+									src: photoSlides[0].signedUrl!,
+									alt: photoSlides[0].caption || activeEvent.title,
+								})
+							}
+						>
+							<EventModalPhoto
+								src={photoSlides[0].signedUrl!}
+								alt={photoSlides[0].caption || activeEvent.title}
+								priority
+							/>
+						</button>
+					) : photoSlides.length > 1 ? (
 						<Carousel
 							withIndicators
-							height={isMobile ? 320 : 460}
+							height={460}
 							emblaOptions={{ loop: true }}
 							getEmblaApi={setEmbla}
 						>
-							{photoSlides.map((photo) => (
+							{photoSlides.map((photo, index) => (
 								<Carousel.Slide key={photo.id}>
 									<button
 										type="button"
@@ -162,11 +264,10 @@ export function TimelineEventModal({
 											})
 										}
 									>
-										<Image
-											src={photo.signedUrl}
+										<EventModalPhoto
+											src={photo.signedUrl!}
 											alt={photo.caption || activeEvent.title}
-											h="100%"
-											fit="cover"
+											priority={index === 0}
 										/>
 									</button>
 								</Carousel.Slide>
@@ -176,7 +277,7 @@ export function TimelineEventModal({
 						<button
 							type="button"
 							className="timeline-event-photo-button"
-							style={{ height: isMobile ? 320 : 460 }}
+							style={{ height: 460 }}
 							aria-label={`Ampliar imagem ${photoSlides[0].caption || activeEvent.title}`}
 							onClick={() =>
 								onPhotoPreview({
@@ -185,142 +286,223 @@ export function TimelineEventModal({
 								})
 							}
 						>
-							<Image
-								src={photoSlides[0].signedUrl}
+							<EventModalPhoto
+								src={photoSlides[0].signedUrl!}
 								alt={photoSlides[0].caption || activeEvent.title}
-								h="100%"
-								fit="cover"
+								priority
 							/>
 						</button>
 					) : null}
 
 					<Stack gap="lg" p={{ base: 'md', sm: 'xl' }}>
 						<Stack gap="sm">
-							<BlurText
-								segments={[
-									<Badge
-										key="date"
-										color="pink"
-										variant="light"
-										leftSection={<CalendarDays size={13} />}
-									>
-										{formatDate(activeEvent.event_date)}
-									</Badge>,
-									showSource ? (
-										<Badge key="source" color="grape" variant="light">
-											{activeEvent.sourceTimeline.name}
+							{isMobile ? (
+								<>
+									<Group gap="xs">
+										<Badge color="pink" variant="light" leftSection={<CalendarDays size={13} />}>
+											{formatDate(activeEvent.event_date)}
 										</Badge>
-									) : null,
-									activeEvent.category ? (
-										<Badge key="category" color="grape" variant="light">
-											{activeEvent.category}
-										</Badge>
-									) : null,
-								].filter(Boolean)}
-								delay={100}
-								direction="top"
-								className={CSSBlurText.badgesBlurText}
-							/>
+										{showSource ? (
+											<Badge color="grape" variant="light">
+												{activeEvent.sourceTimeline.name}
+											</Badge>
+										) : null}
+										{activeEvent.category ? (
+											<Badge color="grape" variant="light">
+												{activeEvent.category}
+											</Badge>
+										) : null}
+									</Group>
 
-							<BlurText
-								text={activeEvent.title}
-								delay={250}
-								animateBy="words"
-								direction="top"
-								className={CSSBlurText.titleBlurText}
-							/>
+									<Title order={2} className="timeline-event-mobile-title">
+										{activeEvent.title}
+									</Title>
 
-							{activeEvent.subtitle ? (
-								<BlurText
-									text={activeEvent.subtitle}
-									delay={150}
-									animateBy="words"
-									direction="bottom"
-									className={CSSBlurText.subtitleBlurText}
-								/>
-							) : null}
-
-							{activeEvent.event_time || activeEvent.location_name ? (
-								<Group gap="lg" c="dimmed">
-									{activeEvent.event_time ? (
-										<BlurText
-											segments={[
-												<Clock3 key="icon" size={17} />,
-												'\u00A0',
-												...activeEvent.event_time.split(''),
-											]}
-											delay={50}
-											animateBy="letters"
-											direction="bottom"
-											className={CSSBlurText.infoBlurText}
-										/>
+									{activeEvent.subtitle ? (
+										<Text c="var(--app-text)" size="lg" fw={600}>
+											{activeEvent.subtitle}
+										</Text>
 									) : null}
-									{activeEvent.location_name ? (
+
+									{activeEvent.event_time || activeEvent.location_name ? (
+										<Group gap="lg" c="dimmed">
+											{activeEvent.event_time ? (
+												<Group gap={6} wrap="nowrap">
+													<Clock3 size={17} />
+													<Text size="sm">{activeEvent.event_time}</Text>
+												</Group>
+											) : null}
+											{activeEvent.location_name ? (
+												<Group gap={6} wrap="nowrap">
+													<MapPin size={17} />
+													<Text size="sm">{activeEvent.location_name}</Text>
+												</Group>
+											) : null}
+										</Group>
+									) : null}
+
+									{activeEvent.tags?.length ? (
+										<Group gap={6}>
+											{activeEvent.tags.map((tag) => (
+												<Badge key={tag} color="gray" variant="outline">
+													{tag}
+												</Badge>
+											))}
+										</Group>
+									) : null}
+
+									{activeEvent.description ? (
+										<Text c="dimmed" size="md" lh={1.62} className="timeline-event-description">
+											{activeEvent.description}
+										</Text>
+									) : null}
+								</>
+							) : (
+								<>
+									<BlurText
+										segments={[
+											<Badge
+												key="date"
+												color="pink"
+												variant="light"
+												leftSection={<CalendarDays size={13} />}
+											>
+												{formatDate(activeEvent.event_date)}
+											</Badge>,
+											showSource ? (
+												<Badge key="source" color="grape" variant="light">
+													{activeEvent.sourceTimeline.name}
+												</Badge>
+											) : null,
+											activeEvent.category ? (
+												<Badge key="category" color="grape" variant="light">
+													{activeEvent.category}
+												</Badge>
+											) : null,
+										].filter(Boolean)}
+										delay={100}
+										direction="top"
+										className={CSSBlurText.badgesBlurText}
+									/>
+
+									<BlurText
+										text={activeEvent.title}
+										delay={250}
+										animateBy="words"
+										direction="top"
+										className={CSSBlurText.titleBlurText}
+									/>
+
+									{activeEvent.subtitle ? (
 										<BlurText
-											segments={[
-												<MapPin key="icon" size={17} />,
-												'\u00A0',
-												...activeEvent.location_name
-													.split(' ')
-													.flatMap((word, index) => (index === 0 ? [word] : ['\u00A0', word])),
-											]}
-											delay={50}
+											text={activeEvent.subtitle}
+											delay={150}
 											animateBy="words"
 											direction="bottom"
-											className={CSSBlurText.infoBlurText}
+											className={CSSBlurText.subtitleBlurText}
 										/>
 									) : null}
-								</Group>
-							) : null}
-							{activeEvent.tags?.length ? (
-								<BlurText
-									segments={activeEvent.tags.map((tag) => (
-										<Badge key={tag} color="gray" variant="outline">
-											{tag}
-										</Badge>
-									))}
-									delay={80}
-									direction="bottom"
-									className={CSSBlurText.tagsBlurText}
-								/>
-							) : null}
-							{activeEvent.description ? (
-								<TextType
-									text={activeEvent.description}
-									typingSpeed={20}
-									pauseDuration={1500}
-									showCursor
-									cursorCharacter="●"
-									loop={false}
-									deletingSpeed={50}
-									cursorBlinkDuration={0.5}
-								/>
-							) : null}
+
+									{activeEvent.event_time || activeEvent.location_name ? (
+										<Group gap="lg" c="dimmed">
+											{activeEvent.event_time ? (
+												<BlurText
+													segments={[
+														<Clock3 key="icon" size={17} />,
+														'\u00A0',
+														...activeEvent.event_time.split(''),
+													]}
+													delay={50}
+													animateBy="letters"
+													direction="bottom"
+													className={CSSBlurText.infoBlurText}
+												/>
+											) : null}
+											{activeEvent.location_name ? (
+												<BlurText
+													segments={[
+														<MapPin key="icon" size={17} />,
+														'\u00A0',
+														...activeEvent.location_name
+															.split(' ')
+															.flatMap((word, index) => (index === 0 ? [word] : ['\u00A0', word])),
+													]}
+													delay={50}
+													animateBy="words"
+													direction="bottom"
+													className={CSSBlurText.infoBlurText}
+												/>
+											) : null}
+										</Group>
+									) : null}
+									{activeEvent.tags?.length ? (
+										<BlurText
+											segments={activeEvent.tags.map((tag) => (
+												<Badge key={tag} color="gray" variant="outline">
+													{tag}
+												</Badge>
+											))}
+											delay={80}
+											direction="bottom"
+											className={CSSBlurText.tagsBlurText}
+										/>
+									) : null}
+									{activeEvent.description ? (
+										<TextType
+											text={activeEvent.description}
+											typingSpeed={20}
+											pauseDuration={1500}
+											showCursor
+											cursorCharacter="●"
+											loop={false}
+											deletingSpeed={50}
+											cursorBlinkDuration={0.5}
+										/>
+									) : null}
+								</>
+							)}
 						</Stack>
 
-						{photoSlides.length > 1 || activeEvent.music_url ? (
+						{isMobile ? (
+							<>
+								<MobilePhotoGrid
+									eventTitle={activeEvent.title}
+									photos={photoSlides}
+									onPhotoPreview={onPhotoPreview}
+								/>
+
+								{activeEvent.music_url ? (
+									<Stack className="timeline-event-mobile-panel" gap="md">
+										<Title order={3} className="timeline-event-stack-title">
+											Trilha sonora
+										</Title>
+										<MusicEmbed url={activeEvent.music_url} autoplay={true} />
+									</Stack>
+								) : null}
+							</>
+						) : photoSlides.length > 1 || activeEvent.music_url ? (
 							<ScrollStack
 								className="timeline-event-scroll-stack"
-								itemDistance={isMobile ? 24 : 32}
-								itemStackDistance={isMobile ? 16 : 22}
+								itemDistance={32}
+								itemStackDistance={22}
 								stackPosition="8%"
 								scaleEndPosition="4%"
 								baseScale={0.9}
 								itemScale={0.04}
 								blurAmount={0.35}
-								style={{ height: isMobile ? 300 : 350 }}
+								style={{ height: 350 }}
 								innerStyle={{
 									minHeight: 'auto',
-									padding: isMobile ? '8px 0 48px' : '8px 8px 56px',
+									padding: '8px 8px 56px',
 								}}
 							>
 								{photoSlides.length > 1 ? (
 									<ScrollStackItem
 										itemClassName="timeline-event-stack-card"
 										itemStyle={{
-											height: isMobile ? 178 : 210,
+											height: 210,
 											margin: '0 0 18px',
-											padding: isMobile ? 16 : 24,
+											padding: 24,
 											borderRadius: 8,
 										}}
 									>
@@ -335,7 +517,7 @@ export function TimelineEventModal({
 											<Group className="timeline-event-folder-group" justify="center">
 												<Folder
 													color="var(--palette-rose)"
-													size={isMobile ? 1 : 1.35}
+													size={1.35}
 													items={photoSlides.map((photo) => (
 														<button
 															key={photo.id}
@@ -356,12 +538,9 @@ export function TimelineEventModal({
 																})
 															}}
 														>
-															<Image
-																src={photo.signedUrl}
+															<EventModalPhoto
+																src={photo.signedUrl!}
 																alt={photo.caption || activeEvent.title}
-																h="100%"
-																w="100%"
-																fit="cover"
 															/>
 														</button>
 													))}
@@ -375,9 +554,9 @@ export function TimelineEventModal({
 									<ScrollStackItem
 										itemClassName="timeline-event-stack-card"
 										itemStyle={{
-											height: isMobile ? 230 : 260,
+											height: 260,
 											margin: '0 0 18px',
-											padding: isMobile ? 16 : 24,
+											padding: 24,
 											borderRadius: 8,
 										}}
 									>
@@ -389,7 +568,7 @@ export function TimelineEventModal({
 												Trilha sonora
 											</Title>
 
-											<MusicEmbed url={activeEvent.music_url} />
+											<MusicEmbed url={activeEvent.music_url} autoplay={true} />
 										</Stack>
 									</ScrollStackItem>
 								) : null}
@@ -421,7 +600,7 @@ export function TimelineEventModal({
 						) : null}
 					</Stack>
 				</Stack>
-			</ScrollArea.Autosize>
+			</div>
 		</Modal>
 	)
 }
