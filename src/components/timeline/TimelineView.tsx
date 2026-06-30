@@ -1,6 +1,6 @@
 import { Alert, Button, Group, Image, Modal, Stack, Text } from '@mantine/core'
 import { CalendarHeart, Plus } from 'lucide-react'
-import { useMemo, useState, type WheelEvent } from 'react'
+import { useCallback, useMemo, useState, type WheelEvent } from 'react'
 import { Link } from 'react-router-dom'
 import type { Couple } from '../../types/database'
 import type { TimelineEventWithPhotos } from '../../types/timeline'
@@ -32,12 +32,12 @@ export function TimelineView({
 	onDeleted: () => void
 }) {
 	const [selectedYear, setSelectedYear] = useState<number | null>(years.at(-1) ?? null)
-	const [selectedMonth, setSelectedMonth] = useState<number | null>(null)
+	const [selectedMonth, setSelectedMonth] = useState<number | null>(() => new Date().getMonth() + 1)
 	const [sortOrder, setSortOrder] = useState<TimelineSortOrder>('asc')
 	const [selectedEvent, setSelectedEvent] = useState<TimelineEventWithPhotos | null>(null)
 	const [photoPreview, setPhotoPreview] = useState<PhotoPreview | null>(null)
 
-	const handleTimelineWheel = (event: WheelEvent<HTMLDivElement>) => {
+	const handleTimelineWheel = useCallback((event: WheelEvent<HTMLDivElement>) => {
 		const track = event.currentTarget
 		const scrollAmount = event.deltaY || event.deltaX
 		const canScrollLeft = scrollAmount < 0 && track.scrollLeft > 0
@@ -47,7 +47,11 @@ export function TimelineView({
 			event.preventDefault()
 			track.scrollLeft += scrollAmount
 		}
-	}
+	}, [])
+
+	const handleSelectEvent = useCallback((event: TimelineEventWithPhotos) => {
+		setSelectedEvent(event)
+	}, [])
 
 	const visibleEvents = useMemo(() => {
 		const filteredEvents = events.filter((event) => {
@@ -125,12 +129,13 @@ export function TimelineView({
 			) : (
 				<div style={{ position: 'relative' }}>
 					<div className="timeline-track" onWheel={handleTimelineWheel}>
-						{visibleEvents.map((event) => (
+						{visibleEvents.map((event, index) => (
 							<TimelineCard
 								key={event.id}
 								event={event}
 								showSource={includesChildren}
-								onClick={() => setSelectedEvent(event)}
+								priority={index < 3}
+								onSelect={handleSelectEvent}
 							/>
 						))}
 					</div>

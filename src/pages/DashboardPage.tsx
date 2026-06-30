@@ -26,12 +26,16 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useAppBackground } from '../components/layout/AppBackgroundContext'
 import Counter from '../components/ui/Counter'
 import { createCouple } from '../lib/timeline/actions'
-import { ensureProfile, getUserTimelineTree } from '../lib/timeline/queries'
-import { getErrorMessage } from '../lib/utils'
+import { ensureProfile, fetchTimelineBackgroundImages, getUserTimelineTree } from '../lib/timeline/queries'
+import { getErrorMessage, getRelationshipDays } from '../lib/utils'
 import type { Couple, CoupleRole, TimelineVisibility } from '../types/database'
 import type { TimelineTree } from '../types/timeline'
+
+import BlurText from '../components/ui/BlurText'
+import CSSBlurText from '../components/ui/BlurText.module.css'
 
 type CoupleForm = {
 	name: string
@@ -48,15 +52,6 @@ function getCreatedAtParts(createdAt: string) {
 		month: date.getMonth() + 1,
 		timestamp: date.getTime(),
 	}
-}
-
-function getRelationshipDays(startedAt: string) {
-	const [year, month, day] = startedAt.split('-').map(Number)
-	const today = new Date()
-	const startTimestamp = Date.UTC(year, month - 1, day)
-	const todayTimestamp = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())
-
-	return Math.max(1, Math.floor((todayTimestamp - startTimestamp) / 86_400_000) + 1)
 }
 
 function DashboardTimelineCard({
@@ -107,6 +102,7 @@ function DashboardTimelineCard({
 }
 
 export function DashboardPage() {
+	const { loadCachedBackgroundImages } = useAppBackground()
 	const [tree, setTree] = useState<TimelineTree | null>(null)
 	const [loading, setLoading] = useState(true)
 	const [creating, setCreating] = useState(false)
@@ -151,6 +147,17 @@ export function DashboardPage() {
 
 		return () => window.clearTimeout(timer)
 	}, [loadTree])
+
+	useEffect(() => {
+		if (!tree) {
+			return
+		}
+
+		const cacheKey = `timeline-tree:${tree.root.id}`
+		const timelineIds = [tree.root.id, ...tree.children.map((timeline) => timeline.id)]
+
+		loadCachedBackgroundImages(cacheKey, () => fetchTimelineBackgroundImages(timelineIds))
+	}, [loadCachedBackgroundImages, tree])
 
 	const visibleChildren = useMemo(() => {
 		return (tree?.children ?? [])
@@ -216,7 +223,13 @@ export function DashboardPage() {
 						<Text c="var(--palette-blush)" fw={800} tt="uppercase" size="xs">
 							Dashboard
 						</Text>
-						<Title order={1} tt="uppercase">Sua árvore de timelines</Title>
+						<BlurText
+							text="Sua árvore de timelines"
+							delay={250}
+							animateBy="words"
+							direction="top"
+							className={CSSBlurText.titleBlurTextTimeLineCouple}
+						/>
 					</Stack>
 					{canManageRelationship ? (
 						<Button color="pink" leftSection={<Plus size={17} />} onClick={openCreateModal}>
@@ -224,49 +237,6 @@ export function DashboardPage() {
 						</Button>
 					) : null}
 				</Group>
-
-				<Divider
-					label="❤"
-					size="sm"
-					color="var(--palette-blush)"
-					styles={{
-						label: { color: 'var(--palette-blush)' },
-					}}
-				/>
-
-
-				{relationshipDays !== null ? (
-					<Stack className="" align="center" gap={6}>
-						<Text c="dimmed" fw={700} tt="uppercase" size="xs">
-							Nossa história já dura
-						</Text>
-						<div aria-label={`${relationshipDays} ${relationshipDays === 1 ? 'dia' : 'dias'} de relacionamento`}>
-							<Counter
-								value={relationshipDays}
-								fontSize={64}
-								gap={2}
-								horizontalPadding={4}
-								fontWeight={800}
-								textColor="var(--palette-blush)"
-								gradientHeight={12}
-								gradientFrom="var(--app-bg-soft)"
-							/>
-						</div>
-						<Text c="dimmed" size="sm">
-							{relationshipDays === 1 ? 'dia juntos' : 'dias juntos'}
-						</Text>
-					</Stack>
-				) : null}
-
-				<Divider
-					label="❤"
-					size="sm"
-					color="var(--palette-blush)"
-					styles={{
-						label: { color: 'var(--palette-blush)' },
-					}}
-				/>
-
 
 				{/* {tree ? (
 					<Group grow align="flex-end" gap="md" className="dashboard-timeline-filters">

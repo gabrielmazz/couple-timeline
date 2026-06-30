@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type FC, type ReactNode } from 'react';
+import { memo, useEffect, useMemo, useRef, type FC, type ReactNode } from 'react';
 import { gsap } from 'gsap';
 
 interface GridMotionProps {
@@ -119,4 +119,4 @@ const GridMotion: FC<GridMotionProps> = ({ items = [], gradientColor = 'black' }
   );
 };
 
-export default GridMotion;
+export default memo(GridMotion);

@@ -13,7 +13,7 @@ function getYouTubeId(url: URL) {
     return null
 }
 
-function getSpotifyEmbed(url: URL) {
+function getSpotifyEmbed(url: URL, autoplay: boolean) {
     if (!url.hostname.includes('spotify.com')) {
         return null
     }
@@ -26,10 +26,10 @@ function getSpotifyEmbed(url: URL) {
         return null
     }
 
-    return `https://open.spotify.com/embed/${type}/${id}?autoplay=1`
+    return `https://open.spotify.com/embed/${type}/${id}?autoplay=${autoplay ? 1 : 0}`
 }
 
-export function MusicEmbed({ url }: { url: string | null }) {
+export function MusicEmbed({ autoplay = true, url }: { autoplay?: boolean; url: string | null }) {
     if (!url) {
         return null
     }
@@ -43,15 +43,16 @@ export function MusicEmbed({ url }: { url: string | null }) {
     }
 
     const youtubeId = getYouTubeId(parsedUrl)
-    const spotifyEmbed = getSpotifyEmbed(parsedUrl)
+    const spotifyEmbed = getSpotifyEmbed(parsedUrl, autoplay)
 
     if (youtubeId) {
         return (
             <iframe
                 className="music-frame"
                 title="Player do YouTube"
-                src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1`}
+                src={`https://www.youtube.com/embed/${youtubeId}?autoplay=${autoplay ? 1 : 0}`}
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                loading="lazy"
                 allowFullScreen
             />
         )

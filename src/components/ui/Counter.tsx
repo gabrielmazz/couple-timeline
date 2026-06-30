@@ -114,11 +114,6 @@ interface CounterProps {
   containerStyle?: React.CSSProperties;
   counterStyle?: React.CSSProperties;
   digitStyle?: React.CSSProperties;
-  gradientHeight?: number;
-  gradientFrom?: string;
-  gradientTo?: string;
-  topGradientStyle?: React.CSSProperties;
-  bottomGradientStyle?: React.CSSProperties;
 }
 
 export default function Counter({
@@ -144,12 +139,7 @@ export default function Counter({
   fontWeight = 'inherit',
   containerStyle,
   counterStyle,
-  digitStyle,
-  gradientHeight = 16,
-  gradientFrom = 'black',
-  gradientTo = 'transparent',
-  topGradientStyle,
-  bottomGradientStyle
+  digitStyle
 }: CounterProps) {
   const height = fontSize + padding;
 
@@ -172,35 +162,12 @@ export default function Counter({
     direction: "ltr"
   };
 
-  const gradientContainerStyle: React.CSSProperties = {
-    pointerEvents: 'none',
-    position: 'absolute',
-    inset: 0,
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'space-between'
-  };
-
-  const defaultTopGradientStyle: React.CSSProperties = {
-    height: gradientHeight,
-    background: `linear-gradient(to bottom, ${gradientFrom}, ${gradientTo})`
-  };
-
-  const defaultBottomGradientStyle: React.CSSProperties = {
-    height: gradientHeight,
-    background: `linear-gradient(to top, ${gradientFrom}, ${gradientTo})`
-  };
-
   return (
     <span style={{ ...defaultContainerStyle, ...containerStyle }}>
       <span style={{ ...defaultCounterStyle, ...counterStyle }}>
         {places.map(place => (
           <Digit key={place} place={place} value={value} height={height} digitStyle={digitStyle} />
         ))}
-      </span>
-      <span style={gradientContainerStyle}>
-        <span style={topGradientStyle ?? defaultTopGradientStyle} />
-        <span style={bottomGradientStyle ?? defaultBottomGradientStyle} />
       </span>
     </span>
   );

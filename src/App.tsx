@@ -4,7 +4,6 @@ import { AppBackgroundProvider } from './components/layout/AppBackgroundProvider
 import { AppFrame } from './components/layout/AppFrame'
 import { DashboardPage } from './pages/DashboardPage'
 import { EventEditorPage } from './pages/EventEditorPage'
-import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { RegisterPage } from './pages/RegisterPage'
@@ -15,7 +14,7 @@ export default function App() {
     <AppBackgroundProvider>
       <AppFrame>
         <Routes>
-          <Route path="/" element={<HomePage />} />
+          <Route path="/" element={<LoginPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route
