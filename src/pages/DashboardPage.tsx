@@ -4,7 +4,6 @@ import {
 	Button,
 	Card,
 	Container,
-	Divider,
 	Group,
 	Loader,
 	Modal,
@@ -27,10 +26,9 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAppBackground } from '../components/layout/AppBackgroundContext'
-import Counter from '../components/ui/Counter'
 import { createCouple } from '../lib/timeline/actions'
 import { ensureProfile, fetchTimelineBackgroundImages, getUserTimelineTree } from '../lib/timeline/queries'
-import { getErrorMessage, getRelationshipDays } from '../lib/utils'
+import { getErrorMessage } from '../lib/utils'
 import type { Couple, CoupleRole, TimelineVisibility } from '../types/database'
 import type { TimelineTree } from '../types/timeline'
 
@@ -176,9 +174,6 @@ export function DashboardPage() {
 	}, [selectedMonth, selectedYear, sortOrder, tree?.children])
 
 	const canManageRelationship = !tree || tree.memberRole === 'owner'
-	const relationshipDays = tree?.root.relationship_started_at
-		? getRelationshipDays(tree.root.relationship_started_at)
-		: null
 
 	function openCreateModal() {
 		form.setValues({
