@@ -24,15 +24,19 @@ const configuredImageProvider = import.meta.env.VITE_TIMELINE_IMAGE_PROVIDER as 
 const configuredImageApiUrl = import.meta.env.VITE_TIMELINE_IMAGE_API_URL as string | undefined
 const configuredImagePublicUrl = import.meta.env.VITE_TIMELINE_IMAGE_PUBLIC_URL as string | undefined
 
+const normalizedImageProvider = configuredImageProvider?.trim().toLowerCase()
+
 export const timelineImageProvider: TimelineImageProvider =
-  configuredImageProvider === 'r2'
+  normalizedImageProvider === 'r2'
     ? 'r2'
-    : configuredImageProvider === 'r2-public'
+    : normalizedImageProvider === 'r2-public' || normalizedImageProvider === 'r2-dev'
       ? 'r2-public'
       : 'supabase'
 
 const timelineImageApiUrl = configuredImageApiUrl?.replace(/\/+$/, '') ?? ''
-const timelineImagePublicUrl = configuredImagePublicUrl?.replace(/\/+$/, '') ?? ''
+const explicitTimelineImagePublicUrl = configuredImagePublicUrl?.replace(/\/+$/, '') ?? ''
+const timelineImagePublicUrl =
+  explicitTimelineImagePublicUrl || (timelineImageProvider === 'r2-public' ? timelineImageApiUrl : '')
 
 export function validateImageFile(file: File) {
   if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
