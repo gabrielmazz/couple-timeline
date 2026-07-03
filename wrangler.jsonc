@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "couple-timeline-images",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-07-03",
+  "r2_buckets": [
+    {
+      "binding": "TIMELINE_IMAGES",
+      "bucket_name": "couple-timeline-images",
+      "remote": true
+    }
+  ],
+  "secrets": {
+    "required": [
+      "SUPABASE_URL",
+      "SUPABASE_PUBLISHABLE_KEY",
+      "IMAGE_SIGNING_SECRET",
+      "ALLOWED_ORIGINS"
+    ]
+  }
+}
