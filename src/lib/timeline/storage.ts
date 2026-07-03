@@ -25,16 +25,17 @@ const configuredImageApiUrl = import.meta.env.VITE_TIMELINE_IMAGE_API_URL as str
 const configuredImagePublicUrl = import.meta.env.VITE_TIMELINE_IMAGE_PUBLIC_URL as string | undefined
 
 const normalizedImageProvider = configuredImageProvider?.trim().toLowerCase()
+const timelineImageApiUrl = configuredImageApiUrl?.replace(/\/+$/, '') ?? ''
+const explicitTimelineImagePublicUrl = configuredImagePublicUrl?.replace(/\/+$/, '') ?? ''
+const hasExplicitTimelineImagePublicUrl = explicitTimelineImagePublicUrl.length > 0
 
 export const timelineImageProvider: TimelineImageProvider =
   normalizedImageProvider === 'r2'
     ? 'r2'
-    : normalizedImageProvider === 'r2-public' || normalizedImageProvider === 'r2-dev'
+    : normalizedImageProvider === 'r2-public' || normalizedImageProvider === 'r2-dev' || hasExplicitTimelineImagePublicUrl
       ? 'r2-public'
       : 'supabase'
 
-const timelineImageApiUrl = configuredImageApiUrl?.replace(/\/+$/, '') ?? ''
-const explicitTimelineImagePublicUrl = configuredImagePublicUrl?.replace(/\/+$/, '') ?? ''
 const timelineImagePublicUrl =
   explicitTimelineImagePublicUrl || (timelineImageProvider === 'r2-public' ? timelineImageApiUrl : '')
 
