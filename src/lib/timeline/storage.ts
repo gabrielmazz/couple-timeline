@@ -24,8 +24,9 @@ const configuredImageProvider = import.meta.env.VITE_TIMELINE_IMAGE_PROVIDER as 
 const configuredImageApiUrl = import.meta.env.VITE_TIMELINE_IMAGE_API_URL as string | undefined
 const configuredImagePublicUrl = import.meta.env.VITE_TIMELINE_IMAGE_PUBLIC_URL as string | undefined
 
+const defaultTimelineImageApiUrl = 'https://couple-timeline.gabriel-mazzuco.workers.dev'
 const normalizedImageProvider = configuredImageProvider?.trim().toLowerCase()
-const timelineImageApiUrl = configuredImageApiUrl?.replace(/\/+$/, '') ?? ''
+const configuredTimelineImageApiUrl = configuredImageApiUrl?.replace(/\/+$/, '') ?? ''
 const explicitTimelineImagePublicUrl = configuredImagePublicUrl?.replace(/\/+$/, '') ?? ''
 const hasExplicitTimelineImagePublicUrl = explicitTimelineImagePublicUrl.length > 0
 
@@ -39,6 +40,20 @@ export const timelineImageProvider: TimelineImageProvider =
         : hasExplicitTimelineImagePublicUrl
           ? 'r2-public'
           : 'supabase'
+
+function isR2PublicUrl(value: string) {
+  try {
+    return new URL(value).hostname.endsWith('.r2.dev')
+  } catch {
+    return false
+  }
+}
+
+const timelineImageApiUrl =
+  timelineImageProvider === 'r2' &&
+  (configuredTimelineImageApiUrl.length === 0 || isR2PublicUrl(configuredTimelineImageApiUrl))
+    ? defaultTimelineImageApiUrl
+    : configuredTimelineImageApiUrl
 
 const timelineImagePublicUrl =
   explicitTimelineImagePublicUrl || (timelineImageProvider === 'r2-public' ? timelineImageApiUrl : '')
@@ -294,33 +309,37 @@ async function createR2SignedUrlMap(paths: string[]) {
     return new Map<string, string | null>()
   }
 
-  const apiUrl = ensureTimelineImageApiUrl()
-  const accessToken = await getAccessToken()
-  const headers = new Headers({
-    'Content-Type': 'application/json',
-  })
+  try {
+    const apiUrl = ensureTimelineImageApiUrl()
+    const accessToken = await getAccessToken()
+    const headers = new Headers({
+      'Content-Type': 'application/json',
+    })
 
-  if (accessToken) {
-    headers.set('Authorization', `Bearer ${accessToken}`)
-  }
+    if (accessToken) {
+      headers.set('Authorization', `Bearer ${accessToken}`)
+    }
 
-  const response = await fetch(`${apiUrl}/api/images/sign-read`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ paths: uniquePaths }),
-  })
+    const response = await fetch(`${apiUrl}/api/images/sign-read`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ paths: uniquePaths }),
+    })
 
-  if (!response.ok) {
+    if (!response.ok) {
+      return new Map(uniquePaths.map((path) => [path, null]))
+    }
+
+    const data = (await response.json().catch(() => ({}))) as SignedUrlMapResponse
+
+    if (data.error || !data.urls) {
+      return new Map(uniquePaths.map((path) => [path, null]))
+    }
+
+    return new Map(uniquePaths.map((path) => [path, data.urls?.[path] ?? null]))
+  } catch {
     return new Map(uniquePaths.map((path) => [path, null]))
   }
-
-  const data = (await response.json().catch(() => ({}))) as SignedUrlMapResponse
-
-  if (data.error || !data.urls) {
-    return new Map(uniquePaths.map((path) => [path, null]))
-  }
-
-  return new Map(uniquePaths.map((path) => [path, data.urls?.[path] ?? null]))
 }
 
 function buildPublicImageUrl(baseUrl: string, path: string) {
