@@ -1,12 +1,3 @@
-type Env = {
-  TIMELINE_IMAGES: R2Bucket
-  SUPABASE_URL: string
-  SUPABASE_PUBLISHABLE_KEY: string
-  IMAGE_SIGNING_SECRET: string
-  ALLOWED_ORIGINS?: string
-  READ_URL_TTL_SECONDS?: string
-}
-
 type ParsedImagePath = {
   path: string
   coupleId: string

@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "worker:deploy": "wrangler deploy",
-    "worker:types": "wrangler types --config wrangler.jsonc",
+    "worker:types": "wrangler types worker/worker-configuration.d.ts --config wrangler.jsonc",
     "images:migrate": "node scripts/migrate-supabase-storage-to-r2.mjs",
     "supabase:link": "supabase link --project-ref loafkhnjrwhppddwztof",
     "migration:new": "supabase migration new",

@@ -15,8 +15,8 @@ O `.env` é opcional. Crie um apenas quando quiser sobrescrever a configuração
 cp .env.example .env
 VITE_SUPABASE_URL=
 VITE_SUPABASE_PUBLISHABLE_KEY=
-VITE_TIMELINE_IMAGE_PROVIDER=supabase
-VITE_TIMELINE_IMAGE_API_URL=
+VITE_TIMELINE_IMAGE_PROVIDER=r2
+VITE_TIMELINE_IMAGE_API_URL=https://couple-timeline.gabriel-mazzuco.workers.dev
 VITE_TIMELINE_IMAGE_PUBLIC_URL=
 ```
 
@@ -69,11 +69,13 @@ npx wrangler r2 bucket create couple-timeline-images
 cp .dev.vars.example .dev.vars
 ```
 
-3. Publique o Worker depois de preencher os secrets no Cloudflare/GitHub:
+3. Publique o Worker `couple-timeline` depois de preencher os secrets no Cloudflare/GitHub:
 
 ```bash
 npm run worker:deploy
 ```
+
+O endpoint público esperado pelo app é `https://couple-timeline.gabriel-mazzuco.workers.dev`.
 
 O Worker exige `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `IMAGE_SIGNING_SECRET` e `ALLOWED_ORIGINS`. Ele não usa `service_role`; upload, remoção e assinatura de leitura consultam as permissões do Supabase com o JWT do usuário quando necessário.
 
@@ -123,8 +125,8 @@ IMAGE_SIGNING_SECRET=
 ALLOWED_ORIGINS= # ex: https://gabrielmazz.github.io,http://localhost:5173
 VITE_SUPABASE_URL=
 VITE_SUPABASE_PUBLISHABLE_KEY=
-VITE_TIMELINE_IMAGE_PROVIDER=supabase # troque para r2 depois da migração validada
-VITE_TIMELINE_IMAGE_API_URL= # URL pública do Worker
+VITE_TIMELINE_IMAGE_PROVIDER=r2
+VITE_TIMELINE_IMAGE_API_URL=https://couple-timeline.gabriel-mazzuco.workers.dev
 VITE_TIMELINE_IMAGE_PUBLIC_URL= # URL pública do bucket R2, só para VITE_TIMELINE_IMAGE_PROVIDER=r2-public
 ```
 

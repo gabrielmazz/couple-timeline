@@ -32,9 +32,13 @@ const hasExplicitTimelineImagePublicUrl = explicitTimelineImagePublicUrl.length 
 export const timelineImageProvider: TimelineImageProvider =
   normalizedImageProvider === 'r2'
     ? 'r2'
-    : normalizedImageProvider === 'r2-public' || normalizedImageProvider === 'r2-dev' || hasExplicitTimelineImagePublicUrl
+    : normalizedImageProvider === 'r2-public' || normalizedImageProvider === 'r2-dev'
       ? 'r2-public'
-      : 'supabase'
+      : normalizedImageProvider === 'supabase'
+        ? 'supabase'
+        : hasExplicitTimelineImagePublicUrl
+          ? 'r2-public'
+          : 'supabase'
 
 const timelineImagePublicUrl =
   explicitTimelineImagePublicUrl || (timelineImageProvider === 'r2-public' ? timelineImageApiUrl : '')
