@@ -10,7 +10,6 @@ import {
 	Menu,
 	Modal,
 	Select,
-	SimpleGrid,
 	Stack,
 	Text,
 	TextInput,
@@ -253,10 +252,6 @@ export function DashboardPage() {
 	}, [selectedMonth, selectedYear, sortOrder, tree?.children])
 
 	const canManageRelationship = tree?.memberRole === 'owner'
-	const eventCount = useMemo(
-		() => (tree?.children ?? []).reduce((total, timeline) => total + timeline.eventCount, 0),
-		[tree?.children],
-	)
 
 	function openCreateModal() {
 		form.setValues({
