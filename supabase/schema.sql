@@ -90,6 +90,9 @@ create index if not exists couple_members_user_id_idx on public.couple_members(u
 create index if not exists couple_members_couple_id_idx on public.couple_members(couple_id);
 create index if not exists timeline_events_couple_year_idx on public.timeline_events(couple_id, year);
 create index if not exists timeline_events_couple_date_idx on public.timeline_events(couple_id, event_date);
+create index if not exists timeline_events_couple_event_date_id_idx on public.timeline_events(couple_id, event_date, id);
+create index if not exists timeline_events_created_by_idx on public.timeline_events(created_by);
+create index if not exists couple_members_couple_user_role_idx on public.couple_members(couple_id, user_id) include (role);
 create index if not exists timeline_photos_event_position_idx on public.timeline_photos(event_id, position);
 
 create or replace function public.set_updated_at()
@@ -1048,3 +1051,89 @@ grant execute on function public.update_relationship_started_at(uuid, date) to a
 
 create index if not exists timeline_photos_storage_path_idx
   on public.timeline_photos(storage_path);
+
+create or replace function public.list_timeline_years(target_couple_ids uuid[])
+returns table(year integer)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  select distinct timeline_event.year
+  from public.timeline_events timeline_event
+  where timeline_event.couple_id = any(target_couple_ids)
+  order by timeline_event.year;
+$$;
+
+revoke execute on function public.list_timeline_years(uuid[]) from public;
+grant execute on function public.list_timeline_years(uuid[]) to anon, authenticated, service_role;
+
+create or replace function public.update_child_timeline(
+  target_timeline_id uuid,
+  timeline_name text
+)
+returns public.couples
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_timeline public.couples%rowtype;
+  normalized_name text := trim(timeline_name);
+begin
+  if auth.uid() is null then
+    raise exception 'Você precisa estar autenticado para editar uma timeline.';
+  end if;
+
+  if char_length(normalized_name) < 2 or char_length(normalized_name) > 120 then
+    raise exception 'Informe um nome entre 2 e 120 caracteres.';
+  end if;
+
+  select * into target_timeline from public.couples where id = target_timeline_id;
+
+  if not found or target_timeline.parent_id is null then
+    raise exception 'Apenas timelines vinculadas podem ser editadas aqui.';
+  end if;
+
+  if not public.is_couple_owner(target_timeline.parent_id) then
+    raise exception 'Apenas o proprietário pode editar timelines vinculadas.';
+  end if;
+
+  update public.couples set name = normalized_name where id = target_timeline_id returning * into target_timeline;
+
+  return target_timeline;
+end;
+$$;
+
+create or replace function public.delete_child_timeline(target_timeline_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_timeline public.couples%rowtype;
+begin
+  if auth.uid() is null then
+    raise exception 'Você precisa estar autenticado para excluir uma timeline.';
+  end if;
+
+  select * into target_timeline from public.couples where id = target_timeline_id;
+
+  if not found or target_timeline.parent_id is null then
+    raise exception 'Apenas timelines vinculadas podem ser excluídas aqui.';
+  end if;
+
+  if not public.is_couple_owner(target_timeline.parent_id) then
+    raise exception 'Apenas o proprietário pode excluir timelines vinculadas.';
+  end if;
+
+  delete from public.couples where id = target_timeline_id;
+end;
+$$;
+
+revoke execute on function public.update_child_timeline(uuid, text) from public;
+grant execute on function public.update_child_timeline(uuid, text) to authenticated, service_role;
+
+revoke execute on function public.delete_child_timeline(uuid) from public;
+grant execute on function public.delete_child_timeline(uuid) to authenticated, service_role;

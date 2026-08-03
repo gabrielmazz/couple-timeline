@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { supabase } from '../supabase/client'
 import { getYearFromDate } from '../utils'
 import { removeEventImages, uploadEventImages } from './storage'
-import { requireUser } from './queries'
+import { getUserTimelineTree, requireUser } from './queries'
 import type { TimelineVisibility } from '../../types/database'
 
 export const eventCategories = [
@@ -91,6 +91,11 @@ export type AddCoupleMemberInput = {
   email: string
 }
 
+export type UpdateChildTimelineInput = {
+  timelineId: string
+  name: string
+}
+
 export type CreateEventInput = z.infer<typeof eventSchema> & {
   files: File[]
   coverFileIndex: number
@@ -98,6 +103,7 @@ export type CreateEventInput = z.infer<typeof eventSchema> & {
 
 export type UpdateEventInput = z.infer<typeof eventSchema> & {
   eventId: string
+  sourceCoupleId: string
   files: File[]
   removedPhotoIds: string[]
   existingPhotoOrder: string[]
@@ -138,6 +144,67 @@ export async function addCoupleMemberByEmail(input: AddCoupleMemberInput) {
   const { error } = await supabase.rpc('add_couple_member_by_email', {
     target_couple_id: parsed.coupleId,
     member_email: parsed.email,
+  })
+
+  if (error) {
+    throw error
+  }
+}
+
+export async function updateChildTimeline(input: UpdateChildTimelineInput) {
+  await requireUser()
+  const name = coupleSchema.shape.name.parse(input.name)
+
+  const { error } = await supabase.rpc('update_child_timeline', {
+    target_timeline_id: input.timelineId,
+    timeline_name: name,
+  })
+
+  if (error) {
+    throw error
+  }
+}
+
+export async function deleteChildTimeline(timelineId: string) {
+	await requireUser()
+	const tree = await getUserTimelineTree()
+	const isOwnedChild = tree?.memberRole === 'owner' && tree.children.some((timeline) => timeline.id === timelineId)
+
+	if (!isOwnedChild) {
+		throw new Error('Você não tem permissão para excluir esta timeline vinculada.')
+	}
+
+	const { data: events, error: eventsError } = await supabase
+		.from('timeline_events')
+		.select('id')
+		.eq('couple_id', timelineId)
+
+  if (eventsError) {
+    throw eventsError
+  }
+
+	const eventIds = (events ?? []).map((event) => event.id)
+	let photoPaths: string[] = []
+
+	if (eventIds.length > 0) {
+		const { data: photos, error: photosError } = await supabase
+			.from('timeline_photos')
+			.select('storage_path')
+			.in('event_id', eventIds)
+
+		if (photosError) {
+			throw photosError
+		}
+
+		photoPaths = (photos ?? []).map((photo) => photo.storage_path)
+	}
+
+  if (photoPaths.length > 0) {
+    await removeEventImages(photoPaths)
+  }
+
+  const { error } = await supabase.rpc('delete_child_timeline', {
+    target_timeline_id: timelineId,
   })
 
   if (error) {
@@ -206,14 +273,14 @@ export async function createTimelineEvent(input: CreateEventInput) {
 
 export async function updateTimelineEvent(input: UpdateEventInput) {
   await requireUser()
-  const parsed = eventSchema.parse(input)
+  const parsed = eventSchema.extend({ sourceCoupleId: z.string().uuid() }).parse(input)
   const year = getYearFromDate(parsed.eventDate)
   const tags = Array.from(new Map(parsed.tags.map((tag) => [tag.toLocaleLowerCase('pt-BR'), tag])).values())
   const { data, error: loadError } = await supabase
     .from('timeline_events')
     .select('id, couple_id, cover_photo_path, timeline_photos(id, storage_path, position)')
     .eq('id', input.eventId)
-    .eq('couple_id', parsed.coupleId)
+    .eq('couple_id', parsed.sourceCoupleId)
     .single()
 
   if (loadError) {
@@ -296,6 +363,7 @@ export async function updateTimelineEvent(input: UpdateEventInput) {
   const { error: updateError } = await supabase
     .from('timeline_events')
     .update({
+      couple_id: parsed.coupleId,
       event_date: parsed.eventDate,
       year,
       title: parsed.title,
@@ -310,7 +378,7 @@ export async function updateTimelineEvent(input: UpdateEventInput) {
       updated_at: new Date().toISOString(),
     })
     .eq('id', input.eventId)
-    .eq('couple_id', parsed.coupleId)
+    .eq('couple_id', parsed.sourceCoupleId)
 
   if (updateError) {
     throw updateError

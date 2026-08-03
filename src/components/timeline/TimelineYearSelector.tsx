@@ -22,10 +22,11 @@ type TimelineYearSelectorProps = {
 	years: number[]
 	selectedYear: number | null
 	selectedMonth: number | null
-	sortOrder: TimelineSortOrder
+	sortOrder?: TimelineSortOrder
+	showSortOrder?: boolean
 	onYearChange: (year: number | null) => void
 	onMonthChange: (month: number | null) => void
-	onSortOrderChange: (order: TimelineSortOrder) => void
+	onSortOrderChange?: (order: TimelineSortOrder) => void
 }
 
 export function TimelineYearSelector({
@@ -33,6 +34,7 @@ export function TimelineYearSelector({
 	selectedYear,
 	selectedMonth,
 	sortOrder,
+	showSortOrder = true,
 	onYearChange,
 	onMonthChange,
 	onSortOrderChange,
@@ -58,16 +60,18 @@ export function TimelineYearSelector({
 				onChange={(value) => onMonthChange(!value || value === 'all' ? null : Number(value))}
 				allowDeselect={false}
 			/>
-			<Select
-				label="Ordenar por data"
-				data={[
-					{ value: 'asc', label: 'Mais antigos primeiro' },
-					{ value: 'desc', label: 'Mais recentes primeiro' },
-				]}
-				value={sortOrder}
-				onChange={(value) => onSortOrderChange((value ?? 'asc') as TimelineSortOrder)}
-				allowDeselect={false}
-			/>
+			{showSortOrder && sortOrder && onSortOrderChange ? (
+				<Select
+					label="Ordenar por data"
+					data={[
+						{ value: 'asc', label: 'Mais antigos primeiro' },
+						{ value: 'desc', label: 'Mais recentes primeiro' },
+					]}
+					value={sortOrder}
+					onChange={(value) => onSortOrderChange((value ?? 'asc') as TimelineSortOrder)}
+					allowDeselect={false}
+				/>
+			) : null}
 		</Group>
 	)
 }

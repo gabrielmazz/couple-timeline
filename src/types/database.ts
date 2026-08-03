@@ -229,11 +229,25 @@ export type Database = {
         }
         Returns: Couple
       }
+      delete_child_timeline: {
+        Args: {
+          target_timeline_id: string
+        }
+        Returns: undefined
+      }
       get_root_couple_id: {
         Args: {
           target_couple_id: string
         }
         Returns: string
+      }
+      list_timeline_years: {
+        Args: {
+          target_couple_ids: string[]
+        }
+        Returns: {
+          year: number
+        }[]
       }
       update_relationship_started_at: {
         Args: {
@@ -241,6 +255,13 @@ export type Database = {
           relationship_start_date: string | null
         }
         Returns: string | null
+      }
+      update_child_timeline: {
+        Args: {
+          target_timeline_id: string
+          timeline_name: string
+        }
+        Returns: Couple
       }
     }
     Enums: Record<string, never>

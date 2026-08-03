@@ -1,8 +1,10 @@
 import {
 	ActionIcon,
+	Alert,
 	Badge,
 	Button,
 	Group,
+	Loader,
 	Modal,
 	Stack,
 	Text,
@@ -121,6 +123,8 @@ function MobilePhotoGrid({
 export function TimelineEventModal({
 	event,
 	opened,
+	loadingPhotos,
+	photosError,
 	canEdit,
 	showSource,
 	onClose,
@@ -129,6 +133,8 @@ export function TimelineEventModal({
 }: {
 	event: TimelineEventWithPhotos | null
 	opened: boolean
+	loadingPhotos: boolean
+	photosError: string | null
 	canEdit: boolean
 	showSource: boolean
 	onClose: () => void
@@ -226,7 +232,14 @@ export function TimelineEventModal({
 						<X size={20} />
 					</ActionIcon>
 
-					{isMobile && photoSlides[0] ? (
+						{loadingPhotos ? (
+							<Group justify="center" gap="sm" py="xl">
+								<Loader color="pink" size="sm" />
+								<Text size="sm" c="dimmed">
+									Carregando fotos do evento…
+								</Text>
+							</Group>
+						) : isMobile && photoSlides[0] ? (
 						<button
 							type="button"
 							className="timeline-event-photo-button timeline-event-photo-button--hero timeline-event-mobile-hero"
@@ -294,8 +307,13 @@ export function TimelineEventModal({
 						</button>
 					) : null}
 
-					<Stack gap="lg" p={{ base: 'md', sm: 'xl' }}>
-						<Stack gap="sm">
+						<Stack gap="lg" p={{ base: 'md', sm: 'xl' }}>
+							{photosError ? (
+								<Alert color="red" radius={8} title="Não foi possível carregar as fotos">
+									{photosError}
+								</Alert>
+							) : null}
+							<Stack gap="sm">
 							{isMobile ? (
 								<>
 									<Group gap="xs">

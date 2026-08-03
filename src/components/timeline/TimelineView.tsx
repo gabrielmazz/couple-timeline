@@ -1,12 +1,12 @@
-import { Alert, Button, Group, Image, Modal, Stack, Text } from '@mantine/core'
+import { Alert, Button, Group, Image, Loader, Modal, Stack, Text } from '@mantine/core'
 import { CalendarHeart, Plus } from 'lucide-react'
-import { useCallback, useMemo, useState, type WheelEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type UIEvent, type WheelEvent } from 'react'
 import { Link } from 'react-router-dom'
 import type { Couple } from '../../types/database'
-import type { TimelineEventWithPhotos } from '../../types/timeline'
+import type { TimelineEventWithPhotos, TimelineFilters } from '../../types/timeline'
 import { TimelineCard } from './TimelineCard'
 import { TimelineEventModal } from './TimelineEventModal'
-import { TimelineYearSelector, type TimelineSortOrder } from './TimelineYearSelector'
+import { TimelineYearSelector } from './TimelineYearSelector'
 
 import BlurText from '../ui/BlurText'
 import CSSBlurText from './../../components/ui/BlurText.module.css'
@@ -22,6 +22,14 @@ export function TimelineView({
 	years,
 	canEdit,
 	includesChildren,
+	filters,
+	isLoading,
+	isLoadingMore,
+	loadMoreError,
+	hasMore,
+	onFiltersChange,
+	onLoadMore,
+	onSelectEvent,
 	onDeleted,
 }: {
 	couple: Couple
@@ -29,45 +37,96 @@ export function TimelineView({
 	years: number[]
 	canEdit: boolean
 	includesChildren: boolean
+	filters: TimelineFilters
+	isLoading: boolean
+	isLoadingMore: boolean
+	loadMoreError: string | null
+	hasMore: boolean
+	onFiltersChange: (filters: TimelineFilters) => void
+	onLoadMore: () => void
+	onSelectEvent: (event: TimelineEventWithPhotos) => Promise<TimelineEventWithPhotos>
 	onDeleted: () => void
 }) {
-	const [selectedYear, setSelectedYear] = useState<number | null>(years.at(-1) ?? null)
-	const [selectedMonth, setSelectedMonth] = useState<number | null>(() => new Date().getMonth() + 1)
-	const [sortOrder, setSortOrder] = useState<TimelineSortOrder>('asc')
 	const [selectedEvent, setSelectedEvent] = useState<TimelineEventWithPhotos | null>(null)
 	const [photoPreview, setPhotoPreview] = useState<PhotoPreview | null>(null)
+	const [loadingEventPhotos, setLoadingEventPhotos] = useState(false)
+	const [eventPhotosError, setEventPhotosError] = useState<string | null>(null)
+	const selectedEventRequestRef = useRef(0)
+	const loadMoreRequestedRef = useRef(false)
+
+	const requestMoreEventsIfNeeded = useCallback((track: HTMLDivElement) => {
+		if (!hasMore || isLoadingMore || loadMoreRequestedRef.current) {
+			return
+		}
+
+		const remainingSpace = track.scrollWidth - track.clientWidth - track.scrollLeft
+		const preloadDistance = Math.max(240, track.clientWidth * 0.35)
+
+		if (remainingSpace <= preloadDistance) {
+			loadMoreRequestedRef.current = true
+			onLoadMore()
+		}
+	}, [hasMore, isLoadingMore, onLoadMore])
+
+	useEffect(() => {
+		loadMoreRequestedRef.current = false
+	}, [events.length, filters.month, filters.sortOrder, filters.year, hasMore])
+
+	const handleTimelineScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+		const track = event.currentTarget
+		const remainingSpace = track.scrollWidth - track.clientWidth - track.scrollLeft
+
+		if (remainingSpace > Math.max(240, track.clientWidth * 0.35)) {
+			loadMoreRequestedRef.current = false
+		}
+
+		requestMoreEventsIfNeeded(track)
+	}, [requestMoreEventsIfNeeded])
 
 	const handleTimelineWheel = useCallback((event: WheelEvent<HTMLDivElement>) => {
 		const track = event.currentTarget
-		const scrollAmount = event.deltaY || event.deltaX
+		const scrollUnit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? track.clientWidth : 1
+		const scrollAmount = (event.deltaY || event.deltaX) * scrollUnit
 		const canScrollLeft = scrollAmount < 0 && track.scrollLeft > 0
 		const canScrollRight = scrollAmount > 0 && track.scrollLeft < track.scrollWidth - track.clientWidth
 
 		if (canScrollLeft || canScrollRight) {
 			event.preventDefault()
-			track.scrollLeft += scrollAmount
+			track.scrollBy({ left: scrollAmount, behavior: 'auto' })
 		}
 	}, [])
 
 	const handleSelectEvent = useCallback((event: TimelineEventWithPhotos) => {
+		const requestId = selectedEventRequestRef.current + 1
+		selectedEventRequestRef.current = requestId
 		setSelectedEvent(event)
+		setLoadingEventPhotos(true)
+		setEventPhotosError(null)
+
+		void onSelectEvent(event)
+			.then((eventWithPhotos) => {
+				if (requestId === selectedEventRequestRef.current) {
+					setSelectedEvent(eventWithPhotos)
+				}
+			})
+			.catch(() => {
+				if (requestId === selectedEventRequestRef.current) {
+					setEventPhotosError('Não foi possível carregar as fotos deste evento.')
+				}
+			})
+			.finally(() => {
+				if (requestId === selectedEventRequestRef.current) {
+					setLoadingEventPhotos(false)
+				}
+			})
+	}, [onSelectEvent])
+
+	const closeSelectedEvent = useCallback(() => {
+		selectedEventRequestRef.current += 1
+		setSelectedEvent(null)
+		setLoadingEventPhotos(false)
+		setEventPhotosError(null)
 	}, [])
-
-	const visibleEvents = useMemo(() => {
-		const filteredEvents = events.filter((event) => {
-			const eventMonth = Number(event.event_date.slice(5, 7))
-
-			return (
-				(selectedYear === null || event.year === selectedYear) &&
-				(selectedMonth === null || eventMonth === selectedMonth)
-			)
-		})
-
-		return filteredEvents.toSorted((first, second) => {
-			const comparison = first.event_date.localeCompare(second.event_date)
-			return sortOrder === 'asc' ? comparison : -comparison
-		})
-	}, [events, selectedMonth, selectedYear, sortOrder])
 
 	return (
 		<Stack gap="xl" py={{ base: 'lg', sm: 'xl' }}>
@@ -76,9 +135,6 @@ export function TimelineView({
 					<Text c="var(--palette-blush)" fw={800} tt="uppercase" size="xs">
 						Timeline {couple.visibility === 'public' ? 'pública' : 'privada'}
 					</Text>
-					{/* <Title order={1} size="clamp(2.2rem, 7vw, 5.4rem)" lh={0.92}>
-						{couple.name}
-					</Title> */}
 					<BlurText
 						text={couple.name}
 						delay={250}
@@ -101,15 +157,19 @@ export function TimelineView({
 
 			<TimelineYearSelector
 				years={years}
-				selectedYear={selectedYear}
-				selectedMonth={selectedMonth}
-				sortOrder={sortOrder}
-				onYearChange={setSelectedYear}
-				onMonthChange={setSelectedMonth}
-				onSortOrderChange={setSortOrder}
+				selectedYear={filters.year}
+				selectedMonth={filters.month}
+				sortOrder={filters.sortOrder}
+				onYearChange={(year) => onFiltersChange({ ...filters, year })}
+				onMonthChange={(month) => onFiltersChange({ ...filters, month })}
+				onSortOrderChange={(sortOrder) => onFiltersChange({ ...filters, sortOrder })}
 			/>
 
-			{events.length === 0 ? (
+			{isLoading && events.length === 0 ? (
+				<Group justify="center" py="xl">
+					<Loader color="pink" />
+				</Group>
+			) : events.length === 0 ? (
 				<Alert
 					className="glass-panel"
 					variant="light"
@@ -122,32 +182,46 @@ export function TimelineView({
 						? 'Crie o primeiro evento para começar a linha do tempo.'
 						: 'Esta timeline ainda não possui eventos públicos.'}
 				</Alert>
-			) : visibleEvents.length === 0 ? (
-				<Alert variant="light" color="pink" radius={8} title="Nenhum evento encontrado">
-					Escolha outro ano ou mês para continuar navegando pela timeline.
-				</Alert>
 			) : (
 				<div style={{ position: 'relative' }}>
-					<div className="timeline-track" onWheel={handleTimelineWheel}>
-						{visibleEvents.map((event, index) => (
+					<div
+						className="timeline-track"
+						onScroll={handleTimelineScroll}
+						onWheel={handleTimelineWheel}
+						aria-busy={isLoadingMore}
+					>
+						{events.map((event, index) => (
 							<TimelineCard
 								key={event.id}
 								event={event}
 								showSource={includesChildren}
-								priority={index < 3}
+								priority={index < 2}
 								onSelect={handleSelectEvent}
 							/>
 						))}
+						{isLoadingMore ? (
+							<div className="timeline-load-sentinel" aria-label="Carregando próximos momentos">
+								<Loader color="pink" size="sm" />
+							</div>
+						) : null}
 					</div>
 				</div>
 			)}
 
+			{loadMoreError ? (
+				<Alert color="red" radius={8} title="Não foi possível carregar os próximos momentos">
+					{loadMoreError}
+				</Alert>
+			) : null}
+
 			<TimelineEventModal
 				event={selectedEvent}
 				opened={Boolean(selectedEvent)}
+				loadingPhotos={loadingEventPhotos}
+				photosError={eventPhotosError}
 				canEdit={canEdit}
 				showSource={includesChildren}
-				onClose={() => setSelectedEvent(null)}
+				onClose={closeSelectedEvent}
 				onDeleted={onDeleted}
 				onPhotoPreview={setPhotoPreview}
 			/>
