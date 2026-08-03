@@ -2,10 +2,11 @@ import type { TimelineEventWithPhotos, TimelinePhotoWithUrl } from '../../types/
 
 type BackgroundPhoto = Pick<TimelinePhotoWithUrl, 'signedUrl'>
 
-export const MAX_BACKGROUND_IMAGES = 12
-
 export function getBackgroundImagesFromUrls(urls: Array<string | null | undefined>) {
-	return Array.from(new Set(urls.filter((url): url is string => Boolean(url)))).slice(0, MAX_BACKGROUND_IMAGES)
+	// Keep the complete collection here. The AppFrame chooses which images are on
+	// screen at a time, so limiting this list would permanently favour the first
+	// events returned by the query.
+	return Array.from(new Set(urls.filter((url): url is string => Boolean(url))))
 }
 
 export function getTimelineBackgroundImages(events: TimelineEventWithPhotos[]) {

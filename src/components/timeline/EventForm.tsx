@@ -17,7 +17,7 @@ import { DateInput } from '@mantine/dates'
 import { useForm } from '@mantine/form'
 import { notifications } from '@mantine/notifications'
 import { CalendarHeart, Save } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
 	createTimelineEvent,
@@ -26,7 +26,7 @@ import {
 } from '../../lib/timeline/actions'
 import { getErrorMessage, getYearFromDate } from '../../lib/utils'
 import type { TimelineEvent } from '../../types/database'
-import type { EventFormModel, TimelinePhotoWithUrl } from '../../types/timeline'
+import type { EventFormModel, EventTimelineDestination, TimelinePhotoWithUrl } from '../../types/timeline'
 import { PhotoUploader } from './PhotoUploader'
 
 type EditableEvent = TimelineEvent & {
@@ -36,11 +36,18 @@ type EditableEvent = TimelineEvent & {
 export function EventForm({
 	coupleId,
 	event,
+	timelineDestinations = [],
+	loadingTimelineDestinations = false,
+	onEventDateChange,
 }: {
 	coupleId: string
 	event?: EditableEvent
+	timelineDestinations?: EventTimelineDestination[]
+	loadingTimelineDestinations?: boolean
+	onEventDateChange: (eventDate: string) => void
 }) {
 	const navigate = useNavigate()
+	const [targetTimelineId, setTargetTimelineId] = useState<string | null>(event?.couple_id ?? coupleId)
 	const [files, setFiles] = useState<File[]>([])
 	const [removedPhotoIds, setRemovedPhotoIds] = useState<string[]>([])
 	const [existingPhotoOrder, setExistingPhotoOrder] = useState<string[]>(
@@ -91,8 +98,26 @@ export function EventForm({
 			},
 		},
 	})
+	const hasCompleteEventDate = /^\d{4}-\d{2}-\d{2}$/.test(form.values.eventDate)
+	const hasTimelineDestinations = timelineDestinations.length > 0
+	const selectedTimelineId = timelineDestinations.some((timeline) => timeline.id === targetTimelineId)
+		? targetTimelineId
+		: null
+
+	useEffect(() => {
+		onEventDateChange(form.values.eventDate)
+	}, [form.values.eventDate, onEventDateChange])
 
 	async function handleSubmit(values: EventFormModel) {
+		if (!selectedTimelineId) {
+			notifications.show({
+				color: 'red',
+				title: 'Selecione uma timeline',
+				message: 'Escolha uma timeline criada no mesmo mês do evento.',
+			})
+			return
+		}
+
 		if (!event && files.length === 0) {
 			notifications.show({
 				color: 'red',
@@ -107,7 +132,8 @@ export function EventForm({
 		try {
 			if (event) {
 				await updateTimelineEvent({
-					coupleId,
+					coupleId: selectedTimelineId,
+					sourceCoupleId: coupleId,
 					eventId: event.id,
 					title: values.title,
 					subtitle: values.subtitle,
@@ -126,7 +152,7 @@ export function EventForm({
 				})
 			} else {
 				await createTimelineEvent({
-					coupleId,
+					coupleId: selectedTimelineId,
 					title: values.title,
 					subtitle: values.subtitle,
 					eventDate: values.eventDate,
@@ -146,7 +172,7 @@ export function EventForm({
 				title: event ? 'Evento atualizado' : 'Evento criado',
 				message: 'A timeline já está com as novas informações.',
 			})
-			navigate(`/timeline/${coupleId}`)
+			navigate(`/timeline/${selectedTimelineId}`)
 		} catch (error) {
 			notifications.show({
 				color: 'red',
@@ -160,7 +186,6 @@ export function EventForm({
 
 	const yearPreview = getYearFromDate(form.values.eventDate)
 	const visiblePhotos = (event?.photos ?? []).filter((photo) => !removedPhotoIds.includes(photo.id))
-
 	return (
 		<Paper className="glass-panel" radius={8} p={{ base: 'md', sm: 'xl' }} withBorder>
 			<form onSubmit={form.onSubmit(handleSubmit)}>
@@ -207,7 +232,10 @@ export function EventForm({
 							clearable={false}
 							required
 							value={form.values.eventDate}
-							onChange={(value) => form.setFieldValue('eventDate', value ?? '')}
+							onChange={(value) => {
+								const eventDate = value ?? ''
+								form.setFieldValue('eventDate', eventDate)
+							}}
 							error={form.errors.eventDate}
 						/>
 						<TextInput
@@ -241,6 +269,28 @@ export function EventForm({
 							{...form.getInputProps('musicUrl')}
 						/>
 					</SimpleGrid>
+
+					<Divider
+						label="Timeline de destino"
+						size="sm"
+						color="var(--palette-blush)"
+						styles={{ label: { color: 'var(--palette-blush)' } }}
+					/>
+
+					<Select
+						label="Vincular evento à timeline"
+						placeholder={hasCompleteEventDate ? 'Selecione uma timeline' : 'Informe a data completa do evento primeiro'}
+						data={timelineDestinations.map((timeline) => ({
+							value: timeline.id,
+							label: `${timeline.parent_id ? 'Vinculada' : 'Principal'} · ${timeline.name}`,
+						}))}
+						value={selectedTimelineId}
+						onChange={setTargetTimelineId}
+						disabled={!hasCompleteEventDate || loadingTimelineDestinations || !hasTimelineDestinations}
+						loading={loadingTimelineDestinations}
+						allowDeselect={false}
+						clearable={false}
+					/>
 
 					<TagsInput
 						label="Tags"

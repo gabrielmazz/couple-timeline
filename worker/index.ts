@@ -14,6 +14,8 @@ const defaultAllowedOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173',
 const maxImageSize = 5 * 1024 * 1024
 const maxPathsPerRequest = 200
 const defaultReadUrlTtlSeconds = 60 * 60
+const maxSupabaseRpcAttempts = 3
+const retryableSupabaseStatuses = new Set([502, 503, 504, 520, 521, 522, 523, 524])
 
 function parseImagePath(input: unknown): ParsedImagePath | null {
   if (typeof input !== 'string') {
@@ -205,6 +207,10 @@ function encodeObjectPath(path: string) {
   return path.split('/').map(encodeURIComponent).join('/')
 }
 
+function createImageCacheKey(origin: string, path: string) {
+  return new Request(`${origin}/images/${encodeObjectPath(path)}`)
+}
+
 function getReadUrlTtl(env: Env) {
   const configuredTtl = Number(env.READ_URL_TTL_SECONDS)
 
@@ -217,7 +223,9 @@ function getReadUrlTtl(env: Env) {
 
 async function createSignedImageUrl(request: Request, env: Env, path: string) {
   const url = new URL(request.url)
-  const expiresAt = Math.floor(Date.now() / 1000) + getReadUrlTtl(env)
+  const now = Math.floor(Date.now() / 1000)
+  const ttl = getReadUrlTtl(env)
+  const expiresAt = Math.ceil((now + 1) / ttl) * ttl
   const signature = await signImagePath(path, expiresAt, env)
 
   return `${url.origin}/images/${encodeObjectPath(path)}?expires=${expiresAt}&sig=${signature}`
@@ -235,18 +243,38 @@ async function callSupabaseRpc<T>(
     'Content-Type': 'application/json',
   })
 
-  const response = await fetch(`${env.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/rpc/${functionName}`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-  })
+  for (let attempt = 1; attempt <= maxSupabaseRpcAttempts; attempt += 1) {
+    let response: Response
 
-  if (!response.ok) {
+    try {
+      response = await fetch(`${env.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/rpc/${functionName}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      })
+    } catch (error) {
+      if (attempt === maxSupabaseRpcAttempts) {
+        throw error
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, attempt * 100))
+      continue
+    }
+
+    if (response.ok) {
+      return response.json<T>()
+    }
+
     const message = await response.text()
-    throw new Error(message || `Supabase RPC ${functionName} falhou.`)
+
+    if (!retryableSupabaseStatuses.has(response.status) || attempt === maxSupabaseRpcAttempts) {
+      throw new Error(message || `Supabase RPC ${functionName} falhou.`)
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, attempt * 100))
   }
 
-  return response.json<T>()
+  throw new Error(`Supabase RPC ${functionName} falhou.`)
 }
 
 async function canReadCouple(env: Env, coupleId: string, userJwt: string | null) {
@@ -367,7 +395,7 @@ async function handleUpload(request: Request, env: Env) {
   return jsonResponse(request, env, { path: parsedPath.path })
 }
 
-async function handleDelete(request: Request, env: Env) {
+async function handleDelete(request: Request, env: Env, executionContext: ExecutionContext) {
   const userJwt = getBearerToken(request)
 
   if (!userJwt) {
@@ -392,6 +420,10 @@ async function handleDelete(request: Request, env: Env) {
     }
 
     await Promise.all(paths.map(({ path }) => env.TIMELINE_IMAGES.delete(path)))
+    const origin = new URL(request.url).origin
+    executionContext.waitUntil(
+      Promise.all(paths.map(({ path }) => caches.default.delete(createImageCacheKey(origin, path)))).then(() => undefined),
+    )
 
     return jsonResponse(request, env, { deleted: paths.map(({ path }) => path) })
   } catch (error) {
@@ -399,7 +431,19 @@ async function handleDelete(request: Request, env: Env) {
   }
 }
 
-async function handleImageRead(request: Request, env: Env, url: URL) {
+function createBrowserImageHeaders(request: Request, env: Env, objectHeaders: Headers) {
+  const headers = new Headers(objectHeaders)
+
+  for (const [key, value] of corsHeaders(request, env).entries()) {
+    headers.set(key, value)
+  }
+
+  headers.set('Cache-Control', `private, max-age=${getReadUrlTtl(env)}, immutable`)
+
+  return headers
+}
+
+async function handleImageRead(request: Request, env: Env, url: URL, executionContext: ExecutionContext) {
   const path = decodeURIComponent(url.pathname.slice('/images/'.length))
   const parsedPath = parseImagePath(path)
   const expiresAt = Number(url.searchParams.get('expires'))
@@ -417,24 +461,37 @@ async function handleImageRead(request: Request, env: Env, url: URL) {
     return errorResponse(request, env, 'Assinatura de imagem inválida.', 403)
   }
 
+  const cacheKey = createImageCacheKey(url.origin, parsedPath.path)
+  const cachedResponse = await caches.default.match(cacheKey)
+
+  if (cachedResponse) {
+    return new Response(cachedResponse.body, {
+      headers: createBrowserImageHeaders(request, env, cachedResponse.headers),
+    })
+  }
+
   const object = await env.TIMELINE_IMAGES.get(parsedPath.path)
 
   if (!object) {
     return errorResponse(request, env, 'Imagem não encontrada.', 404)
   }
 
-  const headers = corsHeaders(request, env)
-  object.writeHttpMetadata(headers)
-  headers.set('ETag', object.httpEtag)
+  const objectHeaders = new Headers()
+  object.writeHttpMetadata(objectHeaders)
+  objectHeaders.set('ETag', object.httpEtag)
+  const browserResponse = new Response(object.body, {
+    headers: createBrowserImageHeaders(request, env, objectHeaders),
+  })
+  const cacheHeaders = new Headers(objectHeaders)
+  cacheHeaders.set('Cache-Control', `public, max-age=${getReadUrlTtl(env)}`)
+  executionContext.waitUntil(
+    caches.default.put(cacheKey, new Response(browserResponse.clone().body, { headers: cacheHeaders })).catch(() => undefined),
+  )
 
-  if (!headers.has('Cache-Control')) {
-    headers.set('Cache-Control', 'private, max-age=3600')
-  }
-
-  return new Response(object.body, { headers })
+  return browserResponse
 }
 
-async function routeRequest(request: Request, env: Env) {
+async function routeRequest(request: Request, env: Env, executionContext: ExecutionContext) {
   const url = new URL(request.url)
 
   if (request.method === 'OPTIONS') {
@@ -450,20 +507,20 @@ async function routeRequest(request: Request, env: Env) {
   }
 
   if (request.method === 'POST' && url.pathname === '/api/images/delete') {
-    return handleDelete(request, env)
+    return handleDelete(request, env, executionContext)
   }
 
   if (request.method === 'GET' && url.pathname.startsWith('/images/')) {
-    return handleImageRead(request, env, url)
+    return handleImageRead(request, env, url, executionContext)
   }
 
   return errorResponse(request, env, 'Rota não encontrada.', 404)
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, executionContext) {
     try {
-      return await routeRequest(request, env)
+      return await routeRequest(request, env, executionContext)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro interno no serviço de imagens.'
 

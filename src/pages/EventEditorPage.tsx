@@ -4,10 +4,15 @@ import { useParams } from 'react-router-dom'
 import { useAppBackground } from '../components/layout/AppBackgroundContext'
 import { EventForm } from '../components/timeline/EventForm'
 import { getPhotoBackgroundImages } from '../lib/timeline/background'
-import { fetchEventForEdit, fetchTimelineTreeBackgroundImages, getCouple } from '../lib/timeline/queries'
+import {
+	fetchEventForEdit,
+	fetchTimelineTreeBackgroundImages,
+	getCouple,
+	getEventTimelineDestinations,
+} from '../lib/timeline/queries'
 import { getErrorMessage } from '../lib/utils'
 import type { TimelineEvent } from '../types/database'
-import type { TimelinePhotoWithUrl } from '../types/timeline'
+import type { EventTimelineDestination, TimelinePhotoWithUrl } from '../types/timeline'
 
 type EditableEvent = TimelineEvent & {
   photos: TimelinePhotoWithUrl[]
@@ -17,7 +22,10 @@ export function EventEditorPage({ mode }: { mode: 'create' | 'edit' }) {
   const { coupleId, eventId } = useParams()
   const { backgroundImages, setBackgroundImages, loadCachedBackgroundImages } = useAppBackground()
   const backgroundImagesRef = useRef(backgroundImages)
-  const [event, setEvent] = useState<EditableEvent | undefined>(undefined)
+	const destinationRequestRef = useRef(0)
+	const [event, setEvent] = useState<EditableEvent | undefined>(undefined)
+	const [eventTimelineDestinations, setEventTimelineDestinations] = useState<EventTimelineDestination[]>([])
+  const [loadingTimelineDestinations, setLoadingTimelineDestinations] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -25,7 +33,35 @@ export function EventEditorPage({ mode }: { mode: 'create' | 'edit' }) {
     backgroundImagesRef.current = backgroundImages
   }, [backgroundImages])
 
-  const load = useCallback(async () => {
+	const loadTimelineDestinations = useCallback(async (eventDate: string) => {
+		const requestId = ++destinationRequestRef.current
+
+		if (!coupleId || !/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) {
+			setEventTimelineDestinations([])
+			return
+		}
+
+		setEventTimelineDestinations([])
+		setLoadingTimelineDestinations(true)
+
+		try {
+			const destinations = await getEventTimelineDestinations(coupleId, eventDate)
+
+			if (requestId === destinationRequestRef.current) {
+				setEventTimelineDestinations(destinations)
+			}
+		} catch (loadError) {
+			if (requestId === destinationRequestRef.current) {
+				setError(getErrorMessage(loadError, 'Não foi possível carregar as timelines disponíveis.'))
+			}
+		} finally {
+			if (requestId === destinationRequestRef.current) {
+				setLoadingTimelineDestinations(false)
+			}
+		}
+	}, [coupleId])
+
+	const load = useCallback(async () => {
     if (!coupleId) {
       setError('Timeline inválida.')
       setLoading(false)
@@ -36,16 +72,17 @@ export function EventEditorPage({ mode }: { mode: 'create' | 'edit' }) {
     setError(null)
 
     try {
-      if (mode === 'create') {
-        const { couple, canEdit } = await getCouple(coupleId)
+			if (mode === 'create') {
+				const { couple, canEdit } = await getCouple(coupleId)
 
         if (!canEdit) {
           throw new Error('Você não tem permissão para criar eventos nesta timeline.')
         }
 
-        const rootId = couple.parent_id ?? couple.id
+				const rootId = couple.parent_id ?? couple.id
 
-        loadCachedBackgroundImages(`timeline-tree:${rootId}`, () => fetchTimelineTreeBackgroundImages(rootId))
+				setEventTimelineDestinations([])
+				loadCachedBackgroundImages(`timeline-tree:${rootId}`, () => fetchTimelineTreeBackgroundImages(rootId))
       } else {
         if (!eventId) {
           throw new Error('Evento inválido.')
@@ -54,6 +91,7 @@ export function EventEditorPage({ mode }: { mode: 'create' | 'edit' }) {
         const editableEvent = await fetchEventForEdit(coupleId, eventId)
 
         setEvent(editableEvent)
+				await loadTimelineDestinations(editableEvent.event_date)
         if (backgroundImagesRef.current.length === 0) {
           setBackgroundImages(getPhotoBackgroundImages(editableEvent.photos))
         }
@@ -63,7 +101,7 @@ export function EventEditorPage({ mode }: { mode: 'create' | 'edit' }) {
     } finally {
       setLoading(false)
     }
-  }, [coupleId, eventId, loadCachedBackgroundImages, mode, setBackgroundImages])
+	}, [coupleId, eventId, loadCachedBackgroundImages, loadTimelineDestinations, mode, setBackgroundImages])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -90,7 +128,13 @@ export function EventEditorPage({ mode }: { mode: 'create' | 'edit' }) {
           </Alert>
         </Stack>
       ) : (
-        <EventForm coupleId={coupleId} event={event} />
+		<EventForm
+			coupleId={coupleId}
+			event={event}
+			timelineDestinations={eventTimelineDestinations}
+			loadingTimelineDestinations={loadingTimelineDestinations}
+			onEventDateChange={loadTimelineDestinations}
+		/>
       )}
     </Container>
   )

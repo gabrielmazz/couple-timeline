@@ -1,45 +1,101 @@
 import { Alert, Button, Card, Container, Group, Loader, SimpleGrid, Stack, Text } from '@mantine/core'
 import { RefreshCcw } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAppBackground } from '../components/layout/AppBackgroundContext'
 import { TimelineView } from '../components/timeline/TimelineView'
 import Counter from '../components/ui/Counter'
 import { getTimelineBackgroundImages } from '../lib/timeline/background'
-import { fetchTimeline } from '../lib/timeline/queries'
+import { fetchTimeline, fetchTimelineEventPhotos } from '../lib/timeline/queries'
 import { getErrorMessage, getRelationshipDays } from '../lib/utils'
-import type { TimelinePayload } from '../types/timeline'
+import type { TimelineCursor, TimelineFilters, TimelinePage as TimelinePageData } from '../types/timeline'
+
+function getInitialFilters(): TimelineFilters {
+	const now = new Date()
+
+	return {
+		year: now.getFullYear(),
+		month: now.getMonth() + 1,
+		sortOrder: 'asc',
+	}
+}
+
+type TimelineLoadRequest = {
+	append?: boolean
+	cursor?: TimelineCursor | null
+	filters: TimelineFilters
+}
 
 export function TimelinePage() {
 	const { coupleId } = useParams()
 	const { backgroundImages, setBackgroundImages } = useAppBackground()
-	const [payload, setPayload] = useState<TimelinePayload | null>(null)
+	const [payload, setPayload] = useState<TimelinePageData | null>(null)
+	const [filters, setFilters] = useState<TimelineFilters>(getInitialFilters)
 	const [loading, setLoading] = useState(true)
+	const [loadingMore, setLoadingMore] = useState(false)
 	const [error, setError] = useState<string | null>(null)
+	const [loadMoreError, setLoadMoreError] = useState<string | null>(null)
+	const requestIdRef = useRef(0)
 
-	const loadTimeline = useCallback(async () => {
+	const loadTimeline = useCallback(async ({ filters: nextFilters, cursor = null, append = false }: TimelineLoadRequest) => {
 		if (!coupleId) {
 			setError('Timeline inválida.')
 			setLoading(false)
 			return
 		}
 
-		setLoading(true)
+		const requestId = requestIdRef.current + 1
+		requestIdRef.current = requestId
+
+		if (append) {
+			setLoadingMore(true)
+			setLoadMoreError(null)
+		} else {
+			setLoading(true)
+		}
+
 		setError(null)
 
 		try {
-			setPayload(await fetchTimeline(coupleId))
+			const page = await fetchTimeline(coupleId, { filters: nextFilters, cursor })
+
+			if (requestId !== requestIdRef.current) {
+				return
+			}
+
+			setFilters(nextFilters)
+			setPayload((currentPayload) =>
+				append && currentPayload
+					? {
+						...page,
+						events: [...currentPayload.events, ...page.events],
+						years: currentPayload.years,
+						currentMonthEventCount: currentPayload.currentMonthEventCount,
+					}
+					: page,
+			)
 		} catch (loadError) {
-			setPayload(null)
-			setError(getErrorMessage(loadError, 'Não foi possível carregar a timeline.'))
+			if (requestId !== requestIdRef.current) {
+				return
+			}
+
+			if (append) {
+				setLoadMoreError(getErrorMessage(loadError, 'Não foi possível carregar mais momentos.'))
+			} else {
+				setPayload(null)
+				setError(getErrorMessage(loadError, 'Não foi possível carregar a timeline.'))
+			}
 		} finally {
-			setLoading(false)
+			if (requestId === requestIdRef.current) {
+				setLoading(false)
+				setLoadingMore(false)
+			}
 		}
 	}, [coupleId])
 
 	useEffect(() => {
 		const timer = window.setTimeout(() => {
-			void loadTimeline()
+			void loadTimeline({ filters: getInitialFilters() })
 		}, 0)
 
 		return () => window.clearTimeout(timer)
@@ -57,22 +113,6 @@ export function TimelinePage() {
 		? getRelationshipDays(payload.couple.relationship_started_at)
 		: null
 
-	const currentMonthEventsCount = useMemo(() => {
-		if (!payload) {
-			return 0
-		}
-
-		const today = new Date()
-		const currentYear = today.getFullYear()
-		const currentMonth = today.getMonth() + 1
-
-		return payload.events.filter((event) => {
-			const [eventYear, eventMonth] = event.event_date.split('-').map(Number)
-
-			return eventYear === currentYear && eventMonth === currentMonth
-		}).length
-	}, [payload])
-
 	useEffect(() => {
 		if (backgroundImages.length > 0 || timelineBackgroundImages.length === 0) {
 			return
@@ -83,7 +123,7 @@ export function TimelinePage() {
 
 	return (
 		<Container size="lg">
-			{loading ? (
+			{loading && !payload ? (
 				<Group justify="center" py={96}>
 					<Loader color="pink" />
 				</Group>
@@ -96,7 +136,11 @@ export function TimelinePage() {
 						<Button component={Link} to="/dashboard" variant="light" color="pink">
 							Dashboard
 						</Button>
-						<Button color="pink" leftSection={<RefreshCcw size={16} />} onClick={() => void loadTimeline()}>
+						<Button
+							color="pink"
+							leftSection={<RefreshCcw size={16} />}
+							onClick={() => void loadTimeline({ filters })}
+						>
 							Tentar novamente
 						</Button>
 					</Group>
@@ -109,7 +153,19 @@ export function TimelinePage() {
 						years={payload.years}
 						canEdit={payload.canEdit}
 						includesChildren={payload.includesChildren}
-						onDeleted={() => void loadTimeline()}
+						filters={filters}
+						isLoading={loading}
+						isLoadingMore={loadingMore}
+						loadMoreError={loadMoreError}
+						hasMore={Boolean(payload.nextCursor)}
+						onFiltersChange={(nextFilters) => void loadTimeline({ filters: nextFilters })}
+						onLoadMore={() =>
+							payload.nextCursor
+								? void loadTimeline({ filters, cursor: payload.nextCursor, append: true })
+								: undefined
+						}
+						onSelectEvent={fetchTimelineEventPhotos}
+						onDeleted={() => void loadTimeline({ filters })}
 					/>
 
 					{relationshipDays !== null ? (
@@ -139,12 +195,12 @@ export function TimelinePage() {
 											Registros deste mês
 										</Text>
 										<div
-											aria-label={`${currentMonthEventsCount} ${
-												currentMonthEventsCount === 1 ? 'evento registrado' : 'eventos registrados'
+											aria-label={`${payload.currentMonthEventCount} ${
+												payload.currentMonthEventCount === 1 ? 'evento registrado' : 'eventos registrados'
 											} no mês atual`}
 										>
 											<Counter
-												value={currentMonthEventsCount}
+												value={payload.currentMonthEventCount}
 												fontSize={64}
 												gap={2}
 												horizontalPadding={4}
@@ -153,7 +209,7 @@ export function TimelinePage() {
 											/>
 										</div>
 										<Text c="dimmed" size="sm">
-											{currentMonthEventsCount === 1 ? 'evento neste mês' : 'eventos neste mês'}
+											{payload.currentMonthEventCount === 1 ? 'evento neste mês' : 'eventos neste mês'}
 										</Text>
 									</Stack>
 								</SimpleGrid>

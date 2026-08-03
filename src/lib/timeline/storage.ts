@@ -25,6 +25,7 @@ const configuredImageApiUrl = import.meta.env.VITE_TIMELINE_IMAGE_API_URL as str
 const configuredImagePublicUrl = import.meta.env.VITE_TIMELINE_IMAGE_PUBLIC_URL as string | undefined
 
 const defaultTimelineImageApiUrl = 'https://couple-timeline.gabriel-mazzuco.workers.dev'
+const MAX_SIGNED_URLS_PER_BATCH = 100
 const normalizedImageProvider = configuredImageProvider?.trim().toLowerCase()
 const configuredTimelineImageApiUrl = configuredImageApiUrl?.replace(/\/+$/, '') ?? ''
 const explicitTimelineImagePublicUrl = configuredImagePublicUrl?.replace(/\/+$/, '') ?? ''
@@ -291,15 +292,52 @@ async function createSupabaseSignedUrlMap(paths: string[]) {
     return new Map<string, string | null>()
   }
 
-  const { data, error } = await supabase.storage
-    .from(TIMELINE_BUCKET)
-    .createSignedUrls(uniquePaths, 60 * 60)
+  const entries = await Promise.all(
+    splitIntoBatches(uniquePaths, MAX_SIGNED_URLS_PER_BATCH).map(async (batch) => {
+      const { data, error } = await supabase.storage.from(TIMELINE_BUCKET).createSignedUrls(batch, 60 * 60)
 
-  if (error) {
-    return new Map(uniquePaths.map((path) => [path, null]))
+      if (error) {
+        throw error
+      }
+
+      return data.map((item) => [item.path, item.signedUrl] as const)
+    }),
+  )
+
+  return new Map(entries.flat())
+}
+
+function splitIntoBatches<T>(items: T[], batchSize: number) {
+  const batches: T[][] = []
+
+  for (let index = 0; index < items.length; index += batchSize) {
+    batches.push(items.slice(index, index + batchSize))
   }
 
-  return new Map(data.map((item) => [item.path, item.signedUrl]))
+  return batches
+}
+
+async function signR2ImageBatch(apiUrl: string, accessToken: string | null, paths: string[]) {
+  const headers = new Headers({
+    'Content-Type': 'application/json',
+  })
+
+  if (accessToken) {
+    headers.set('Authorization', `Bearer ${accessToken}`)
+  }
+
+  const response = await fetch(`${apiUrl}/api/images/sign-read`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ paths }),
+  })
+  const data = (await response.json().catch(() => ({}))) as SignedUrlMapResponse
+
+  if (!response.ok || data.error || !data.urls) {
+    throw new Error(data.error || 'Não foi possível preparar as imagens da timeline.')
+  }
+
+  return paths.map((path) => [path, data.urls?.[path] ?? null] as const)
 }
 
 async function createR2SignedUrlMap(paths: string[]) {
@@ -309,37 +347,15 @@ async function createR2SignedUrlMap(paths: string[]) {
     return new Map<string, string | null>()
   }
 
-  try {
-    const apiUrl = ensureTimelineImageApiUrl()
-    const accessToken = await getAccessToken()
-    const headers = new Headers({
-      'Content-Type': 'application/json',
-    })
+  const apiUrl = ensureTimelineImageApiUrl()
+  const accessToken = await getAccessToken()
+  const entries: Array<readonly [string, string | null]> = []
 
-    if (accessToken) {
-      headers.set('Authorization', `Bearer ${accessToken}`)
-    }
-
-    const response = await fetch(`${apiUrl}/api/images/sign-read`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ paths: uniquePaths }),
-    })
-
-    if (!response.ok) {
-      return new Map(uniquePaths.map((path) => [path, null]))
-    }
-
-    const data = (await response.json().catch(() => ({}))) as SignedUrlMapResponse
-
-    if (data.error || !data.urls) {
-      return new Map(uniquePaths.map((path) => [path, null]))
-    }
-
-    return new Map(uniquePaths.map((path) => [path, data.urls?.[path] ?? null]))
-  } catch {
-    return new Map(uniquePaths.map((path) => [path, null]))
+  for (const batch of splitIntoBatches(uniquePaths, MAX_SIGNED_URLS_PER_BATCH)) {
+    entries.push(...(await signR2ImageBatch(apiUrl, accessToken, batch)))
   }
+
+  return new Map(entries)
 }
 
 function buildPublicImageUrl(baseUrl: string, path: string) {

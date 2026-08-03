@@ -19,8 +19,10 @@ export const supabase = createClient<Database>(
   supabaseKey,
   {
     auth: {
-      persistSession: true,
-      autoRefreshToken: true,
+      // The session must only exist while this page is open. This prevents a
+      // previous login from being restored when the user returns later.
+      persistSession: false,
+      autoRefreshToken: false,
       detectSessionInUrl: true,
     },
   },
