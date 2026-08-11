@@ -162,11 +162,7 @@ export async function getUserTimelineTree(): Promise<TimelineTree | null> {
   }
 }
 
-export async function getEventTimelineDestinations(coupleId: string, eventDate: string) {
-	if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) {
-		return []
-	}
-
+export async function getEventTimelineDestinations(coupleId: string) {
   const { couple, canEdit } = await getCouple(coupleId)
 
   if (!canEdit) {
@@ -194,13 +190,7 @@ export async function getEventTimelineDestinations(coupleId: string, eventDate: 
     throw childrenError
   }
 
-	const [eventYear, eventMonth] = eventDate.split('-').map(Number)
-
-	return [root, ...(children ?? [])].filter((timeline) => {
-		const createdAt = new Date(timeline.created_at)
-
-		return createdAt.getFullYear() === eventYear && createdAt.getMonth() + 1 === eventMonth
-	})
+	return [root, ...(children ?? [])]
 }
 
 export async function fetchTimelineBackgroundImages(coupleIds: string[]) {

@@ -33,10 +33,10 @@ export function EventEditorPage({ mode }: { mode: 'create' | 'edit' }) {
     backgroundImagesRef.current = backgroundImages
   }, [backgroundImages])
 
-	const loadTimelineDestinations = useCallback(async (eventDate: string) => {
+	const loadTimelineDestinations = useCallback(async () => {
 		const requestId = ++destinationRequestRef.current
 
-		if (!coupleId || !/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) {
+		if (!coupleId) {
 			setEventTimelineDestinations([])
 			return
 		}
@@ -45,7 +45,7 @@ export function EventEditorPage({ mode }: { mode: 'create' | 'edit' }) {
 		setLoadingTimelineDestinations(true)
 
 		try {
-			const destinations = await getEventTimelineDestinations(coupleId, eventDate)
+			const destinations = await getEventTimelineDestinations(coupleId)
 
 			if (requestId === destinationRequestRef.current) {
 				setEventTimelineDestinations(destinations)
@@ -77,11 +77,11 @@ export function EventEditorPage({ mode }: { mode: 'create' | 'edit' }) {
 
         if (!canEdit) {
           throw new Error('Você não tem permissão para criar eventos nesta timeline.')
-        }
+				}
 
 				const rootId = couple.parent_id ?? couple.id
 
-				setEventTimelineDestinations([])
+				await loadTimelineDestinations()
 				loadCachedBackgroundImages(`timeline-tree:${rootId}`, () => fetchTimelineTreeBackgroundImages(rootId))
       } else {
         if (!eventId) {
@@ -91,7 +91,7 @@ export function EventEditorPage({ mode }: { mode: 'create' | 'edit' }) {
         const editableEvent = await fetchEventForEdit(coupleId, eventId)
 
         setEvent(editableEvent)
-				await loadTimelineDestinations(editableEvent.event_date)
+			await loadTimelineDestinations()
         if (backgroundImagesRef.current.length === 0) {
           setBackgroundImages(getPhotoBackgroundImages(editableEvent.photos))
         }
@@ -133,7 +133,6 @@ export function EventEditorPage({ mode }: { mode: 'create' | 'edit' }) {
 			event={event}
 			timelineDestinations={eventTimelineDestinations}
 			loadingTimelineDestinations={loadingTimelineDestinations}
-			onEventDateChange={loadTimelineDestinations}
 		/>
       )}
     </Container>

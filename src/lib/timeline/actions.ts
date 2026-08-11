@@ -363,6 +363,7 @@ export async function updateTimelineEvent(input: UpdateEventInput) {
   const { error: updateError } = await supabase
     .from('timeline_events')
     .update({
+      couple_id: parsed.coupleId,
       event_date: parsed.eventDate,
       year,
       title: parsed.title,

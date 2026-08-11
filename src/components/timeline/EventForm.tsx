@@ -17,7 +17,7 @@ import { DateInput } from '@mantine/dates'
 import { useForm } from '@mantine/form'
 import { notifications } from '@mantine/notifications'
 import { CalendarHeart, Save } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
 	createTimelineEvent,
@@ -38,16 +38,14 @@ export function EventForm({
 	event,
 	timelineDestinations = [],
 	loadingTimelineDestinations = false,
-	onEventDateChange,
 }: {
 	coupleId: string
 	event?: EditableEvent
 	timelineDestinations?: EventTimelineDestination[]
 	loadingTimelineDestinations?: boolean
-	onEventDateChange: (eventDate: string) => void
 }) {
 	const navigate = useNavigate()
-	const [targetTimelineId, setTargetTimelineId] = useState<string | null>(event?.couple_id ?? coupleId)
+	const [targetTimelineId, setTargetTimelineId] = useState<string | null>(event?.couple_id ?? null)
 	const [files, setFiles] = useState<File[]>([])
 	const [removedPhotoIds, setRemovedPhotoIds] = useState<string[]>([])
 	const [existingPhotoOrder, setExistingPhotoOrder] = useState<string[]>(
@@ -98,26 +96,14 @@ export function EventForm({
 			},
 		},
 	})
-	const hasCompleteEventDate = /^\d{4}-\d{2}-\d{2}$/.test(form.values.eventDate)
-	const hasTimelineDestinations = timelineDestinations.length > 0
-	const selectedTimelineId = timelineDestinations.some((timeline) => timeline.id === targetTimelineId)
+	const rootTimelineId = timelineDestinations.find((timeline) => timeline.parent_id === null)?.id ?? coupleId
+	const linkedTimelineDestinations = timelineDestinations.filter((timeline) => timeline.parent_id !== null)
+	const selectedTimelineId = linkedTimelineDestinations.some((timeline) => timeline.id === targetTimelineId)
 		? targetTimelineId
 		: null
-
-	useEffect(() => {
-		onEventDateChange(form.values.eventDate)
-	}, [form.values.eventDate, onEventDateChange])
+	const destinationTimelineId = selectedTimelineId ?? rootTimelineId
 
 	async function handleSubmit(values: EventFormModel) {
-		if (!selectedTimelineId) {
-			notifications.show({
-				color: 'red',
-				title: 'Selecione uma timeline',
-				message: 'Escolha uma timeline criada no mesmo mês do evento.',
-			})
-			return
-		}
-
 		if (!event && files.length === 0) {
 			notifications.show({
 				color: 'red',
@@ -132,7 +118,7 @@ export function EventForm({
 		try {
 			if (event) {
 				await updateTimelineEvent({
-					coupleId: selectedTimelineId,
+					coupleId: destinationTimelineId,
 					sourceCoupleId: coupleId,
 					eventId: event.id,
 					title: values.title,
@@ -152,7 +138,7 @@ export function EventForm({
 				})
 			} else {
 				await createTimelineEvent({
-					coupleId: selectedTimelineId,
+					coupleId: destinationTimelineId,
 					title: values.title,
 					subtitle: values.subtitle,
 					eventDate: values.eventDate,
@@ -172,7 +158,7 @@ export function EventForm({
 				title: event ? 'Evento atualizado' : 'Evento criado',
 				message: 'A timeline já está com as novas informações.',
 			})
-			navigate(`/timeline/${selectedTimelineId}`)
+			navigate(`/timeline/${destinationTimelineId}`)
 		} catch (error) {
 			notifications.show({
 				color: 'red',
@@ -271,25 +257,25 @@ export function EventForm({
 					</SimpleGrid>
 
 					<Divider
-						label="Timeline de destino"
+						label="Timeline vinculada (opcional)"
 						size="sm"
 						color="var(--palette-blush)"
 						styles={{ label: { color: 'var(--palette-blush)' } }}
 					/>
 
 					<Select
-						label="Vincular evento à timeline"
-						placeholder={hasCompleteEventDate ? 'Selecione uma timeline' : 'Informe a data completa do evento primeiro'}
-						data={timelineDestinations.map((timeline) => ({
+						label="Adicionar a uma timeline vinculada"
+						description="Se não selecionar nenhuma, o evento ficará somente na timeline principal."
+						placeholder="Nenhuma timeline vinculada"
+						data={linkedTimelineDestinations.map((timeline) => ({
 							value: timeline.id,
-							label: `${timeline.parent_id ? 'Vinculada' : 'Principal'} · ${timeline.name}`,
+							label: timeline.name,
 						}))}
 						value={selectedTimelineId}
 						onChange={setTargetTimelineId}
-						disabled={!hasCompleteEventDate || loadingTimelineDestinations || !hasTimelineDestinations}
+						disabled={loadingTimelineDestinations || linkedTimelineDestinations.length === 0}
 						loading={loadingTimelineDestinations}
-						allowDeselect={false}
-						clearable={false}
+						clearable
 					/>
 
 					<TagsInput
