@@ -84,6 +84,89 @@ create table if not exists public.timeline_photos (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.couple_gifts (
+  id uuid primary key default gen_random_uuid(),
+  couple_id uuid not null references public.couples(id) on delete cascade,
+  created_by uuid not null references auth.users(id) on delete cascade,
+  recipient_id uuid not null references auth.users(id) on delete cascade,
+  title text not null,
+  description text,
+  image_url text,
+  link_url text,
+  price_min numeric(10, 2),
+  price_max numeric(10, 2),
+  category text not null default 'Outro',
+  priority text not null default 'medium',
+  status text not null default 'wanted',
+  is_surprise boolean not null default false,
+  related_date date,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint couple_gifts_title_check check (char_length(btrim(title)) between 2 and 120),
+  constraint couple_gifts_price_min_check check (price_min is null or price_min >= 0),
+  constraint couple_gifts_price_max_check check (price_max is null or price_max >= 0),
+  constraint couple_gifts_price_range_check check (
+    price_min is null or price_max is null or price_max >= price_min
+  ),
+  constraint couple_gifts_category_check check (category in (
+    'Tecnologia', 'Roupas', 'Beleza', 'Casa', 'Decoração', 'Viagem',
+    'Livros', 'Games', 'Comida', 'Experiência', 'Outro'
+  )),
+  constraint couple_gifts_priority_check check (priority in ('low', 'medium', 'high')),
+  constraint couple_gifts_status_check check (status in ('wanted', 'purchased', 'received'))
+);
+
+create table if not exists public.couple_calendar_entries (
+  id uuid primary key default gen_random_uuid(),
+  couple_id uuid not null references public.couples(id) on delete cascade,
+  title text not null,
+  description text,
+  event_date date not null,
+  event_time time,
+  location_name text,
+  category text not null default 'other',
+  reminder_days_before smallint not null default 0,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint couple_calendar_entries_title_length_check
+    check (char_length(trim(title)) between 2 and 120),
+  constraint couple_calendar_entries_description_length_check
+    check (description is null or char_length(description) <= 2000),
+  constraint couple_calendar_entries_location_length_check
+    check (location_name is null or char_length(location_name) <= 120),
+  constraint couple_calendar_entries_category_check
+    check (category in ('trip', 'reservation', 'appointment', 'special_date', 'other')),
+  constraint couple_calendar_entries_reminder_days_check
+    check (reminder_days_before between 0 and 30)
+);
+
+create table if not exists public.future_moments (
+  id uuid primary key default gen_random_uuid(),
+  couple_id uuid not null references public.couples(id) on delete cascade,
+  title text not null,
+  description text,
+  category text not null default 'Sonho',
+  status text not null default 'planned',
+  target_date date,
+  location_name text,
+  completed_at timestamptz,
+  completed_event_id uuid references public.timeline_events(id) on delete set null,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint future_moments_title_length_check
+    check (char_length(trim(title)) between 2 and 120),
+  constraint future_moments_description_length_check
+    check (description is null or char_length(description) <= 5000),
+  constraint future_moments_location_length_check
+    check (location_name is null or char_length(location_name) <= 120),
+  constraint future_moments_category_check
+    check (category in ('Viagem', 'Lugar', 'Restaurante', 'Filme ou série', 'Meta', 'Sonho', 'Outro')),
+  constraint future_moments_status_check
+    check (status in ('planned', 'in_progress', 'completed'))
+);
+
 create index if not exists couples_created_by_idx on public.couples(created_by);
 create index if not exists couples_visibility_idx on public.couples(visibility);
 create index if not exists couple_members_user_id_idx on public.couple_members(user_id);
@@ -94,6 +177,16 @@ create index if not exists timeline_events_couple_event_date_id_idx on public.ti
 create index if not exists timeline_events_created_by_idx on public.timeline_events(created_by);
 create index if not exists couple_members_couple_user_role_idx on public.couple_members(couple_id, user_id) include (role);
 create index if not exists timeline_photos_event_position_idx on public.timeline_photos(event_id, position);
+create index if not exists couple_gifts_couple_created_at_idx
+  on public.couple_gifts(couple_id, created_at desc);
+create index if not exists couple_gifts_couple_created_by_idx
+  on public.couple_gifts(couple_id, created_by);
+create index if not exists couple_gifts_couple_recipient_created_at_idx
+  on public.couple_gifts(couple_id, recipient_id, created_at desc);
+create index if not exists couple_calendar_entries_couple_date_id_idx
+  on public.couple_calendar_entries(couple_id, event_date, id);
+create index if not exists future_moments_couple_status_date_idx
+  on public.future_moments(couple_id, status, target_date, id);
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -108,6 +201,21 @@ $$;
 drop trigger if exists set_timeline_events_updated_at on public.timeline_events;
 create trigger set_timeline_events_updated_at
 before update on public.timeline_events
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_couple_gifts_updated_at on public.couple_gifts;
+create trigger set_couple_gifts_updated_at
+before update on public.couple_gifts
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_couple_calendar_entries_updated_at on public.couple_calendar_entries;
+create trigger set_couple_calendar_entries_updated_at
+before update on public.couple_calendar_entries
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_future_moments_updated_at on public.future_moments;
+create trigger set_future_moments_updated_at
+before update on public.future_moments
 for each row execute function public.set_updated_at();
 
 create or replace function public.handle_new_user()
@@ -245,6 +353,9 @@ alter table public.couples enable row level security;
 alter table public.couple_members enable row level security;
 alter table public.timeline_events enable row level security;
 alter table public.timeline_photos enable row level security;
+alter table public.couple_gifts enable row level security;
+alter table public.couple_calendar_entries enable row level security;
+alter table public.future_moments enable row level security;
 
 drop policy if exists "Profiles are readable by owner" on public.profiles;
 create policy "Profiles are readable by owner"
@@ -338,6 +449,56 @@ create policy "Members can delete events"
 on public.timeline_events for delete
 using (public.can_edit_couple(couple_id));
 
+drop policy if exists "Couple members can read calendar entries" on public.couple_calendar_entries;
+create policy "Couple members can read calendar entries"
+on public.couple_calendar_entries for select
+to authenticated
+using (public.can_edit_couple(couple_id));
+
+drop policy if exists "Couple members can create calendar entries" on public.couple_calendar_entries;
+create policy "Couple members can create calendar entries"
+on public.couple_calendar_entries for insert
+to authenticated
+with check (public.can_edit_couple(couple_id) and created_by = auth.uid());
+
+drop policy if exists "Couple members can update calendar entries" on public.couple_calendar_entries;
+create policy "Couple members can update calendar entries"
+on public.couple_calendar_entries for update
+to authenticated
+using (public.can_edit_couple(couple_id))
+with check (public.can_edit_couple(couple_id));
+
+drop policy if exists "Couple members can delete calendar entries" on public.couple_calendar_entries;
+create policy "Couple members can delete calendar entries"
+on public.couple_calendar_entries for delete
+to authenticated
+using (public.can_edit_couple(couple_id));
+
+drop policy if exists "Couple members can read future moments" on public.future_moments;
+create policy "Couple members can read future moments"
+on public.future_moments for select
+to authenticated
+using (public.can_edit_couple(couple_id));
+
+drop policy if exists "Couple members can create future moments" on public.future_moments;
+create policy "Couple members can create future moments"
+on public.future_moments for insert
+to authenticated
+with check (public.can_edit_couple(couple_id) and created_by = auth.uid());
+
+drop policy if exists "Couple members can update future moments" on public.future_moments;
+create policy "Couple members can update future moments"
+on public.future_moments for update
+to authenticated
+using (public.can_edit_couple(couple_id))
+with check (public.can_edit_couple(couple_id));
+
+drop policy if exists "Couple members can delete future moments" on public.future_moments;
+create policy "Couple members can delete future moments"
+on public.future_moments for delete
+to authenticated
+using (public.can_edit_couple(couple_id));
+
 drop policy if exists "Photos can be read by members or public visitors" on public.timeline_photos;
 create policy "Photos can be read by members or public visitors"
 on public.timeline_photos for select
@@ -392,6 +553,50 @@ using (
     where te.id = event_id
       and public.can_edit_couple(te.couple_id)
   )
+);
+
+drop policy if exists "Couple members can read gifts" on public.couple_gifts;
+create policy "Couple members can read gifts"
+on public.couple_gifts for select
+to authenticated
+using (public.is_couple_member(couple_id));
+
+drop policy if exists "Couple members can create their own gifts" on public.couple_gifts;
+drop policy if exists "Couple members can create gifts for either person" on public.couple_gifts;
+create policy "Couple members can create gifts for either person"
+on public.couple_gifts for insert
+to authenticated
+with check (
+  public.is_couple_member(couple_id)
+  and created_by = (select auth.uid())
+  and exists (
+    select 1
+    from public.couple_members recipient_membership
+    where recipient_membership.couple_id = public.couple_gifts.couple_id
+      and recipient_membership.user_id = public.couple_gifts.recipient_id
+  )
+);
+
+drop policy if exists "Gift owners can update their gifts" on public.couple_gifts;
+create policy "Gift owners can update their gifts"
+on public.couple_gifts for update
+to authenticated
+using (
+  public.is_couple_member(couple_id)
+  and created_by = (select auth.uid())
+)
+with check (
+  public.is_couple_member(couple_id)
+  and created_by = (select auth.uid())
+);
+
+drop policy if exists "Gift owners can delete their gifts" on public.couple_gifts;
+create policy "Gift owners can delete their gifts"
+on public.couple_gifts for delete
+to authenticated
+using (
+  public.is_couple_member(couple_id)
+  and created_by = (select auth.uid())
 );
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
@@ -1011,9 +1216,56 @@ $$;
 revoke execute on function public.update_relationship_started_at(uuid, date) from public;
 grant execute on function public.update_relationship_started_at(uuid, date) to authenticated;
 
+-- The actor is intentionally not stored. A partner can update only the status
+-- through this function, so a surprise does not reveal who marked it.
+create or replace function public.update_couple_gift_status(
+  target_gift_id uuid,
+  next_status text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_gift public.couple_gifts%rowtype;
+begin
+  if auth.uid() is null then
+    raise exception 'Você precisa estar autenticado para atualizar um presente.';
+  end if;
+
+  if next_status not in ('wanted', 'purchased', 'received') then
+    raise exception 'Status de presente inválido.';
+  end if;
+
+  select *
+  into target_gift
+  from public.couple_gifts
+  where id = target_gift_id;
+
+  if not found or not public.is_couple_member(target_gift.couple_id) then
+    raise exception 'Presente não encontrado ou sem permissão de acesso.';
+  end if;
+
+  if target_gift.created_by <> auth.uid() and next_status = 'wanted' then
+    raise exception 'A pessoa vinculada só pode marcar o presente como comprado ou recebido.';
+  end if;
+
+  update public.couple_gifts
+  set status = next_status
+  where id = target_gift_id;
+
+  return target_gift_id;
+end;
+$$;
+
+revoke execute on function public.update_couple_gift_status(uuid, text) from public;
+grant execute on function public.update_couple_gift_status(uuid, text) to authenticated;
+
 -- Explicit Data API grants for projects where new public schema objects are
 -- not auto-exposed. RLS policies remain the authorization boundary.
 grant usage on schema public to anon, authenticated, service_role;
+revoke all on table public.couple_gifts from anon, authenticated;
 
 grant select on table
   public.couples,
@@ -1032,13 +1284,19 @@ to authenticated;
 grant insert, update on table public.profiles to authenticated;
 grant insert, update, delete on table public.timeline_events to authenticated;
 grant insert, update, delete on table public.timeline_photos to authenticated;
+grant select, insert, update, delete on table public.couple_gifts to authenticated;
+grant select, insert, update, delete on table public.couple_calendar_entries to authenticated;
+grant select, insert, update, delete on table public.future_moments to authenticated;
 
 grant select, insert, update, delete on table
   public.profiles,
   public.couples,
   public.couple_members,
   public.timeline_events,
-  public.timeline_photos
+  public.timeline_photos,
+  public.couple_gifts,
+  public.couple_calendar_entries,
+  public.future_moments
 to service_role;
 
 revoke execute on function public.can_read_couple(uuid) from public;
@@ -1048,6 +1306,70 @@ grant execute on function public.can_edit_couple(uuid) to authenticated, service
 grant execute on function public.create_couple_timeline(text, text) to authenticated, service_role;
 grant execute on function public.add_couple_member_by_email(uuid, text) to authenticated, service_role;
 grant execute on function public.update_relationship_started_at(uuid, date) to authenticated, service_role;
+grant execute on function public.update_couple_gift_status(uuid, text) to authenticated, service_role;
+
+create or replace function public.complete_future_moment(target_moment_id uuid)
+returns uuid
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  future_moment public.future_moments%rowtype;
+  created_event_id uuid;
+  event_date_value date;
+  event_category text;
+begin
+  select *
+  into future_moment
+  from public.future_moments
+  where id = target_moment_id;
+
+  if not found or not public.can_edit_couple(future_moment.couple_id) then
+    raise exception 'Momento futuro não encontrado ou sem permissão de edição.';
+  end if;
+
+  if future_moment.completed_event_id is not null then
+    return future_moment.completed_event_id;
+  end if;
+
+  event_date_value := coalesce(future_moment.target_date, current_date);
+  event_category := case when future_moment.category = 'Viagem' then 'Viagem' else 'Outro' end;
+
+  insert into public.timeline_events (
+    couple_id,
+    event_date,
+    year,
+    title,
+    description,
+    location_name,
+    category,
+    created_by
+  )
+  values (
+    future_moment.couple_id,
+    event_date_value,
+    extract(year from event_date_value)::integer,
+    future_moment.title,
+    future_moment.description,
+    future_moment.location_name,
+    event_category,
+    auth.uid()
+  )
+  returning id into created_event_id;
+
+  update public.future_moments
+  set status = 'completed',
+      completed_at = now(),
+      completed_event_id = created_event_id
+  where id = target_moment_id;
+
+  return created_event_id;
+end;
+$$;
+
+revoke execute on function public.complete_future_moment(uuid) from public;
+grant execute on function public.complete_future_moment(uuid) to authenticated, service_role;
 
 create index if not exists timeline_photos_storage_path_idx
   on public.timeline_photos(storage_path);
@@ -1137,3 +1459,218 @@ grant execute on function public.update_child_timeline(uuid, text) to authentica
 
 revoke execute on function public.delete_child_timeline(uuid) from public;
 grant execute on function public.delete_child_timeline(uuid) to authenticated, service_role;
+
+-- Comments and reactions inside timeline events.
+create table if not exists public.timeline_event_comments (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid not null references public.timeline_events(id) on delete cascade,
+  couple_id uuid not null references public.couples(id) on delete cascade,
+  parent_comment_id uuid references public.timeline_event_comments(id) on delete set null,
+  author_id uuid not null references auth.users(id) on delete cascade,
+  content text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint timeline_event_comments_content_check
+    check (char_length(btrim(content)) between 1 and 1000),
+  constraint timeline_event_comments_parent_check
+    check (parent_comment_id is null or parent_comment_id <> id)
+);
+
+create table if not exists public.timeline_event_comment_reactions (
+  id uuid primary key default gen_random_uuid(),
+  comment_id uuid not null references public.timeline_event_comments(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  emoji text not null,
+  created_at timestamptz not null default now(),
+  constraint timeline_event_comment_reactions_emoji_check
+    check (emoji in ('❤️', '😍', '😂', '🥹', '👏', '🔥')),
+  unique (comment_id, user_id, emoji)
+);
+
+create index if not exists timeline_event_comments_event_created_at_idx
+  on public.timeline_event_comments(event_id, created_at, id);
+
+create index if not exists timeline_event_comments_parent_idx
+  on public.timeline_event_comments(parent_comment_id);
+
+create index if not exists timeline_event_comment_reactions_comment_idx
+  on public.timeline_event_comment_reactions(comment_id, emoji);
+
+create or replace function public.validate_timeline_event_comment()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  event_couple_id uuid;
+  parent_event_id uuid;
+  parent_couple_id uuid;
+begin
+  select te.couple_id
+  into event_couple_id
+  from public.timeline_events te
+  where te.id = new.event_id;
+
+  if event_couple_id is null or event_couple_id <> new.couple_id then
+    raise exception 'O comentário precisa pertencer ao casal do evento.';
+  end if;
+
+  if new.parent_comment_id is not null then
+    select parent.event_id, parent.couple_id
+    into parent_event_id, parent_couple_id
+    from public.timeline_event_comments parent
+    where parent.id = new.parent_comment_id;
+
+    if parent_event_id is null
+      or parent_event_id <> new.event_id
+      or parent_couple_id <> new.couple_id then
+      raise exception 'A resposta precisa pertencer ao mesmo evento.';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists validate_timeline_event_comment_trigger on public.timeline_event_comments;
+create trigger validate_timeline_event_comment_trigger
+before insert or update on public.timeline_event_comments
+for each row execute function public.validate_timeline_event_comment();
+
+drop trigger if exists set_timeline_event_comments_updated_at on public.timeline_event_comments;
+create trigger set_timeline_event_comments_updated_at
+before update on public.timeline_event_comments
+for each row execute function public.set_updated_at();
+
+alter table public.timeline_event_comments enable row level security;
+alter table public.timeline_event_comment_reactions enable row level security;
+
+revoke all on table public.timeline_event_comments from anon, authenticated;
+revoke all on table public.timeline_event_comment_reactions from anon, authenticated;
+grant select, insert, update, delete on table public.timeline_event_comments to authenticated;
+grant select, insert, delete on table public.timeline_event_comment_reactions to authenticated;
+grant all on table public.timeline_event_comments to service_role;
+grant all on table public.timeline_event_comment_reactions to service_role;
+
+drop policy if exists "Couple members can read event comments" on public.timeline_event_comments;
+create policy "Couple members can read event comments"
+on public.timeline_event_comments for select
+to authenticated
+using (public.can_edit_couple(couple_id));
+
+drop policy if exists "Couple members can create event comments" on public.timeline_event_comments;
+create policy "Couple members can create event comments"
+on public.timeline_event_comments for insert
+to authenticated
+with check (
+  public.can_edit_couple(couple_id)
+  and author_id = (select auth.uid())
+);
+
+drop policy if exists "Authors can update event comments" on public.timeline_event_comments;
+create policy "Authors can update event comments"
+on public.timeline_event_comments for update
+to authenticated
+using (
+  public.can_edit_couple(couple_id)
+  and author_id = (select auth.uid())
+)
+with check (
+  public.can_edit_couple(couple_id)
+  and author_id = (select auth.uid())
+);
+
+drop policy if exists "Authors can delete event comments" on public.timeline_event_comments;
+create policy "Authors can delete event comments"
+on public.timeline_event_comments for delete
+to authenticated
+using (
+  public.can_edit_couple(couple_id)
+  and author_id = (select auth.uid())
+);
+
+drop policy if exists "Couple members can read comment reactions" on public.timeline_event_comment_reactions;
+create policy "Couple members can read comment reactions"
+on public.timeline_event_comment_reactions for select
+to authenticated
+using (
+  exists (
+    select 1
+    from public.timeline_event_comments comment_row
+    where comment_row.id = comment_id
+      and public.can_edit_couple(comment_row.couple_id)
+  )
+);
+
+drop policy if exists "Couple members can add their comment reactions" on public.timeline_event_comment_reactions;
+create policy "Couple members can add their comment reactions"
+on public.timeline_event_comment_reactions for insert
+to authenticated
+with check (
+  user_id = (select auth.uid())
+  and exists (
+    select 1
+    from public.timeline_event_comments comment_row
+    where comment_row.id = comment_id
+      and public.can_edit_couple(comment_row.couple_id)
+  )
+);
+
+drop policy if exists "Users can remove their comment reactions" on public.timeline_event_comment_reactions;
+create policy "Users can remove their comment reactions"
+on public.timeline_event_comment_reactions for delete
+to authenticated
+using (user_id = (select auth.uid()));
+
+create or replace function public.toggle_timeline_event_comment_reaction(
+  target_comment_id uuid,
+  reaction_emoji text
+)
+returns boolean
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  comment_couple_id uuid;
+  existing_reaction_id uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'Você precisa estar autenticado para reagir a um comentário.';
+  end if;
+
+  if reaction_emoji not in ('❤️', '😍', '😂', '🥹', '👏', '🔥') then
+    raise exception 'Reação inválida.';
+  end if;
+
+  select comment_row.couple_id
+  into comment_couple_id
+  from public.timeline_event_comments comment_row
+  where comment_row.id = target_comment_id;
+
+  if comment_couple_id is null or not public.can_edit_couple(comment_couple_id) then
+    raise exception 'Comentário não encontrado ou sem permissão de acesso.';
+  end if;
+
+  select reaction.id
+  into existing_reaction_id
+  from public.timeline_event_comment_reactions reaction
+  where reaction.comment_id = target_comment_id
+    and reaction.user_id = auth.uid()
+    and reaction.emoji = reaction_emoji;
+
+  if existing_reaction_id is not null then
+    delete from public.timeline_event_comment_reactions
+    where id = existing_reaction_id;
+    return false;
+  end if;
+
+  insert into public.timeline_event_comment_reactions (comment_id, user_id, emoji)
+  values (target_comment_id, auth.uid(), reaction_emoji);
+
+  return true;
+end;
+$$;
+
+revoke execute on function public.toggle_timeline_event_comment_reaction(uuid, text) from public;
+grant execute on function public.toggle_timeline_event_comment_reaction(uuid, text) to authenticated;

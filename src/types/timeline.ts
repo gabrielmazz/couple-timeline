@@ -1,4 +1,12 @@
-import type { Couple, CoupleRole, EventCategory, TimelineEvent, TimelinePhoto } from './database'
+import type {
+  Couple,
+  CoupleRole,
+  EventCategory,
+  TimelineEvent,
+  TimelineEventComment,
+  TimelineEventCommentReaction,
+  TimelinePhoto,
+} from './database'
 
 export type CoupleListItem = Couple & {
   memberRole: CoupleRole
@@ -26,6 +34,11 @@ export type TimelineEventWithPhotos = TimelineEvent & {
   photos: TimelinePhotoWithUrl[]
   coverUrl: string | null
   sourceTimeline: Pick<Couple, 'id' | 'name'>
+}
+
+export type TimelineEventCommentWithAuthor = TimelineEventComment & {
+  authorName: string
+  reactions: TimelineEventCommentReaction[]
 }
 
 export type TimelineSortOrder = 'asc' | 'desc'

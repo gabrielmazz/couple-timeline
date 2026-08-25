@@ -22,6 +22,7 @@ import { deleteTimelineEvent } from '../../lib/timeline/actions'
 import { formatDate, getErrorMessage } from '../../lib/utils'
 import type { TimelineEventWithPhotos } from '../../types/timeline'
 import { MusicEmbed } from './MusicEmbed'
+import { TimelineEventComments } from './TimelineEventComments'
 
 import BlurText from './../../components/ui/BlurText'
 import CSSBlurText from './../../components/ui/BlurText.module.css'
@@ -126,6 +127,7 @@ export function TimelineEventModal({
 	loadingPhotos,
 	photosError,
 	canEdit,
+	canComment,
 	showSource,
 	onClose,
 	onDeleted,
@@ -136,6 +138,7 @@ export function TimelineEventModal({
 	loadingPhotos: boolean
 	photosError: string | null
 	canEdit: boolean
+	canComment: boolean
 	showSource: boolean
 	onClose: () => void
 	onDeleted: () => void
@@ -591,6 +594,14 @@ export function TimelineEventModal({
 									</ScrollStackItem>
 								) : null}
 							</ScrollStack>
+						) : null}
+
+						{canComment ? (
+							<TimelineEventComments
+								eventId={activeEvent.id}
+								coupleId={activeEvent.couple_id}
+								opened={opened}
+							/>
 						) : null}
 
 						{canEdit ? (
