@@ -151,6 +151,7 @@ export function TimelinePage() {
 						couple={payload.couple}
 						events={payload.events}
 						years={payload.years}
+						isMember={payload.isMember}
 						canEdit={payload.canEdit}
 						includesChildren={payload.includesChildren}
 						filters={filters}

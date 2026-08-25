@@ -2,6 +2,7 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 
 export type TimelineVisibility = 'public' | 'private'
 export type CoupleRole = 'owner' | 'partner'
+export type CalendarEntryCategory = 'trip' | 'reservation' | 'appointment' | 'special_date' | 'other'
 export type EventCategory =
   | 'Primeiro encontro'
   | 'Primeiro beijo'
@@ -46,6 +47,24 @@ export type EventCategory =
   | 'Reconciliação'
   | 'Dia comum especial'
   | 'Outro'
+
+export type GiftCategory =
+  | 'Tecnologia'
+  | 'Roupas'
+  | 'Beleza'
+  | 'Casa'
+  | 'Decoração'
+  | 'Viagem'
+  | 'Livros'
+  | 'Games'
+  | 'Comida'
+  | 'Experiência'
+  | 'Outro'
+
+export type GiftPriority = 'low' | 'medium' | 'high'
+export type GiftStatus = 'wanted' | 'purchased' | 'received'
+export type FutureMomentCategory = 'Viagem' | 'Lugar' | 'Restaurante' | 'Filme ou série' | 'Meta' | 'Sonho' | 'Outro'
+export type FutureMomentStatus = 'planned' | 'in_progress' | 'completed'
 
 export type Profile = {
   id: string
@@ -101,6 +120,76 @@ export type TimelinePhoto = {
   position: number | null
   caption: string | null
   created_at: string
+}
+
+export type TimelineEventComment = {
+  id: string
+  event_id: string
+  couple_id: string
+  parent_comment_id: string | null
+  author_id: string
+  content: string
+  created_at: string
+  updated_at: string
+}
+
+export type TimelineEventCommentReaction = {
+  id: string
+  comment_id: string
+  user_id: string
+  emoji: string
+  created_at: string
+}
+
+export type CoupleGift = {
+  id: string
+  couple_id: string
+  created_by: string
+  recipient_id: string
+  title: string
+  description: string | null
+  image_url: string | null
+  link_url: string | null
+  price_min: number | null
+  price_max: number | null
+  category: GiftCategory
+  priority: GiftPriority
+  status: GiftStatus
+  is_surprise: boolean
+  related_date: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type CoupleCalendarEntry = {
+  id: string
+  couple_id: string
+  title: string
+  description: string | null
+  event_date: string
+  event_time: string | null
+  location_name: string | null
+  category: CalendarEntryCategory
+  reminder_days_before: number
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type FutureMoment = {
+  id: string
+  couple_id: string
+  title: string
+  description: string | null
+  category: FutureMomentCategory
+  status: FutureMomentStatus
+  target_date: string | null
+  location_name: string | null
+  completed_at: string | null
+  completed_event_id: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
 }
 
 export type Database = {
@@ -180,6 +269,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          couple_id?: string
           event_date?: string
           year?: number
           title?: string
@@ -209,6 +299,132 @@ export type Database = {
           storage_path?: string
           position?: number | null
           caption?: string | null
+        }
+        Relationships: []
+      }
+      timeline_event_comments: {
+        Row: TimelineEventComment
+        Insert: {
+          id?: string
+          event_id: string
+          couple_id: string
+          parent_comment_id?: string | null
+          author_id: string
+          content: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          parent_comment_id?: string | null
+          content?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      timeline_event_comment_reactions: {
+        Row: TimelineEventCommentReaction
+        Insert: {
+          id?: string
+          comment_id: string
+          user_id: string
+          emoji: string
+          created_at?: string
+        }
+        Update: never
+        Relationships: []
+      }
+      couple_gifts: {
+        Row: CoupleGift
+        Insert: {
+          id?: string
+          couple_id: string
+          created_by: string
+          recipient_id: string
+          title: string
+          description?: string | null
+          image_url?: string | null
+          link_url?: string | null
+          price_min?: number | null
+          price_max?: number | null
+          category?: GiftCategory
+          priority?: GiftPriority
+          status?: GiftStatus
+          is_surprise?: boolean
+          related_date?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          title?: string
+          description?: string | null
+          image_url?: string | null
+          link_url?: string | null
+          price_min?: number | null
+          price_max?: number | null
+          category?: GiftCategory
+          priority?: GiftPriority
+          status?: GiftStatus
+          is_surprise?: boolean
+          related_date?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      couple_calendar_entries: {
+        Row: CoupleCalendarEntry
+        Insert: {
+          id?: string
+          couple_id: string
+          title: string
+          description?: string | null
+          event_date: string
+          event_time?: string | null
+          location_name?: string | null
+          category?: CalendarEntryCategory
+          reminder_days_before?: number
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          title?: string
+          description?: string | null
+          event_date?: string
+          event_time?: string | null
+          location_name?: string | null
+          category?: CalendarEntryCategory
+          reminder_days_before?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      future_moments: {
+        Row: FutureMoment
+        Insert: {
+          id?: string
+          couple_id: string
+          title: string
+          description?: string | null
+          category?: FutureMomentCategory
+          status?: FutureMomentStatus
+          target_date?: string | null
+          location_name?: string | null
+          completed_at?: string | null
+          completed_event_id?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          title?: string
+          description?: string | null
+          category?: FutureMomentCategory
+          status?: FutureMomentStatus
+          target_date?: string | null
+          location_name?: string | null
+          completed_at?: string | null
+          completed_event_id?: string | null
+          updated_at?: string
         }
         Relationships: []
       }
@@ -262,6 +478,26 @@ export type Database = {
           timeline_name: string
         }
         Returns: Couple
+      }
+      update_couple_gift_status: {
+        Args: {
+          target_gift_id: string
+          next_status: GiftStatus
+        }
+        Returns: string
+      }
+      complete_future_moment: {
+        Args: {
+          target_moment_id: string
+        }
+        Returns: string
+      }
+      toggle_timeline_event_comment_reaction: {
+        Args: {
+          target_comment_id: string
+          reaction_emoji: string
+        }
+        Returns: boolean
       }
     }
     Enums: Record<string, never>

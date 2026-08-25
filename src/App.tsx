@@ -4,6 +4,9 @@ import { AppBackgroundProvider } from './components/layout/AppBackgroundProvider
 import { AppFrame } from './components/layout/AppFrame'
 import { DashboardPage } from './pages/DashboardPage'
 import { EventEditorPage } from './pages/EventEditorPage'
+import { CalendarPage } from './pages/CalendarPage'
+import { GiftsPage } from './pages/GiftsPage'
+import { FutureMomentsPage } from './pages/FutureMomentsPage'
 import { LoginPage } from './pages/LoginPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { RegisterPage } from './pages/RegisterPage'
@@ -30,6 +33,30 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/presentes"
+            element={
+              <ProtectedRoute>
+                <GiftsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/calendario"
+            element={
+              <ProtectedRoute>
+                <CalendarPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/futuro"
+            element={
+              <ProtectedRoute>
+                <FutureMomentsPage />
               </ProtectedRoute>
             }
           />

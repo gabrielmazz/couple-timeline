@@ -36,3 +36,6 @@ dist-ssr
 !.dev.vars.example
 .wrangler/
 migration-reports/
+
+# Pasta de skills
+.agents

@@ -4,6 +4,7 @@ import { createSignedUrlMap } from './storage'
 import type { Couple, CoupleMember, CoupleRole, TimelineEvent, TimelinePhoto } from '../../types/database'
 import type {
   TimelineCursor,
+  TimelineEventCommentWithAuthor,
   TimelineEventWithPhotos,
   TimelineFilters,
   TimelinePage,
@@ -29,6 +30,24 @@ type BackgroundEventRow = Pick<TimelineEvent, 'cover_photo_path'> & {
 
 type TimelinePhotosRow = Pick<TimelineEvent, 'cover_photo_path'> & {
   timeline_photos: TimelinePhoto[] | null
+}
+
+type EventCommentRow = {
+  id: string
+  event_id: string
+  couple_id: string
+  parent_comment_id: string | null
+  author_id: string
+  content: string
+  created_at: string
+  updated_at: string
+  timeline_event_comment_reactions: {
+    id: string
+    comment_id: string
+    user_id: string
+    emoji: string
+    created_at: string
+  }[] | null
 }
 
 export type FetchTimelineOptions = {
@@ -473,6 +492,53 @@ export async function fetchTimelineEventPhotos(event: TimelineEventWithPhotos) {
     photos: photoItems,
     coverUrl: row.cover_photo_path ? signedUrls.get(row.cover_photo_path) ?? fallbackCover : fallbackCover,
   }
+}
+
+export async function getTimelineEventComments(eventId: string): Promise<TimelineEventCommentWithAuthor[]> {
+  await requireUser()
+
+  const { data, error } = await supabase
+    .from('timeline_event_comments')
+    .select(
+      'id, event_id, couple_id, parent_comment_id, author_id, content, created_at, updated_at, timeline_event_comment_reactions(id, comment_id, user_id, emoji, created_at)',
+    )
+    .eq('event_id', eventId)
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    throw error
+  }
+
+  const rows = (data ?? []) as unknown as EventCommentRow[]
+  const authorIds = Array.from(new Set(rows.map((row) => row.author_id)))
+
+  if (authorIds.length === 0) {
+    return []
+  }
+
+  const { data: profiles, error: profilesError } = await supabase
+    .from('profiles')
+    .select('id, name')
+    .in('id', authorIds)
+
+  if (profilesError) {
+    throw profilesError
+  }
+
+  const namesById = new Map((profiles ?? []).map((profile) => [profile.id, profile.name]))
+
+  return rows.map((row) => ({
+    id: row.id,
+    event_id: row.event_id,
+    couple_id: row.couple_id,
+    parent_comment_id: row.parent_comment_id,
+    author_id: row.author_id,
+    content: row.content,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    authorName: namesById.get(row.author_id) || 'Pessoa do casal',
+    reactions: row.timeline_event_comment_reactions ?? [],
+  }))
 }
 
 export async function fetchEventForEdit(coupleId: string, eventId: string) {

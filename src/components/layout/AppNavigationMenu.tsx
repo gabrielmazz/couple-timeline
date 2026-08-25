@@ -96,6 +96,9 @@ export function AppNavigationMenu() {
 			createMenuItem('Home', 'Ir para a página inicial', '/'),
 			createMenuItem('Árvores', 'Ir para o dashboard', '/dashboard'),
 			createMenuItem('Timeline', 'Ir para a timeline principal', timelinePath),
+			createMenuItem('Presentes', 'Ir para a lista de presentes', '/presentes'),
+			createMenuItem('Calendário', 'Ir para o calendário do casal', '/calendario'),
+			createMenuItem('Futuro', 'Ir para os planos do casal', '/futuro'),
 			createMenuItem('Perfil', 'Ir para o perfil', '/perfil'),
 			{
 				label: 'Sair',
@@ -108,17 +111,31 @@ export function AppNavigationMenu() {
 		]
 
 	return (
-		<StaggeredMenu
-			isFixed
-			logo={<AppMenuLogo />}
-			items={menuItems}
-			socialItems={[]}
-			displaySocials={false}
-			displayItemNumbering
-			colors={['#e23d75', '#feb89f', '#2a1227']}
-			accentColor="var(--palette-rose)"
-			menuButtonColor="#fff7f4"
-			openMenuButtonColor="#fff7f4"
-		/>
+		<>
+			<StaggeredMenu
+				className="app-navigation-menu"
+				isFixed
+				logo={<AppMenuLogo />}
+				items={menuItems}
+				socialItems={[]}
+				displaySocials={false}
+				displayItemNumbering
+				colors={['#e23d75', '#feb89f', '#2a1227']}
+				accentColor="var(--palette-rose)"
+				menuButtonColor="#fff7f4"
+				openMenuButtonColor="#fff7f4"
+			/>
+			<style>{`
+				.app-navigation-menu .sm-panel-item {
+					font-size: clamp(2.6rem, 4.2vw, 4.2rem);
+				}
+
+				@media (max-width: 640px) {
+					.app-navigation-menu .sm-panel-item {
+						font-size: clamp(2.2rem, 12vw, 3.6rem);
+					}
+				}
+			`}</style>
+		</>
 	)
 }

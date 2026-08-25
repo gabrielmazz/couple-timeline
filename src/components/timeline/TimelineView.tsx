@@ -20,6 +20,7 @@ export function TimelineView({
 	couple,
 	events,
 	years,
+	isMember,
 	canEdit,
 	includesChildren,
 	filters,
@@ -35,6 +36,7 @@ export function TimelineView({
 	couple: Couple
 	events: TimelineEventWithPhotos[]
 	years: number[]
+	isMember: boolean
 	canEdit: boolean
 	includesChildren: boolean
 	filters: TimelineFilters
@@ -220,6 +222,7 @@ export function TimelineView({
 				loadingPhotos={loadingEventPhotos}
 				photosError={eventPhotosError}
 				canEdit={canEdit}
+				canComment={isMember}
 				showSource={includesChildren}
 				onClose={closeSelectedEvent}
 				onDeleted={onDeleted}

@@ -81,6 +81,20 @@ const eventSchema = z.object({
     .or(z.literal('')),
 })
 
+export const commentReactionEmojis = ['❤️', '😍', '😂', '🥹', '👏', '🔥'] as const
+
+const eventCommentSchema = z.object({
+  eventId: z.string().uuid(),
+  coupleId: z.string().uuid(),
+  parentCommentId: z.string().uuid().nullable().optional(),
+  content: z.string().trim().min(1, 'Escreva um comentário.').max(1000, 'Use até 1000 caracteres.'),
+})
+
+const commentReactionSchema = z.object({
+  commentId: z.string().uuid(),
+  emoji: z.enum(commentReactionEmojis),
+})
+
 export type CreateCoupleInput = {
   name: string
   visibility: TimelineVisibility
@@ -110,6 +124,9 @@ export type UpdateEventInput = z.infer<typeof eventSchema> & {
   coverPhotoPath: string | null
   coverFileIndex: number | null
 }
+
+export type CreateEventCommentInput = z.infer<typeof eventCommentSchema>
+export type ToggleEventCommentReactionInput = z.infer<typeof commentReactionSchema>
 
 type EventWithPhotosForWrite = {
   id: string
@@ -149,6 +166,45 @@ export async function addCoupleMemberByEmail(input: AddCoupleMemberInput) {
   if (error) {
     throw error
   }
+}
+
+export async function createTimelineEventComment(input: CreateEventCommentInput) {
+  const user = await requireUser()
+  const parsed = eventCommentSchema.parse(input)
+
+  const { data, error } = await supabase
+    .from('timeline_event_comments')
+    .insert({
+      event_id: parsed.eventId,
+      couple_id: parsed.coupleId,
+      parent_comment_id: parsed.parentCommentId ?? null,
+      author_id: user.id,
+      content: parsed.content,
+    })
+    .select('id')
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  return data.id
+}
+
+export async function toggleTimelineEventCommentReaction(input: ToggleEventCommentReactionInput) {
+  await requireUser()
+  const parsed = commentReactionSchema.parse(input)
+
+  const { data, error } = await supabase.rpc('toggle_timeline_event_comment_reaction', {
+    target_comment_id: parsed.commentId,
+    reaction_emoji: parsed.emoji,
+  })
+
+  if (error) {
+    throw error
+  }
+
+  return data
 }
 
 export async function updateChildTimeline(input: UpdateChildTimelineInput) {
@@ -363,6 +419,7 @@ export async function updateTimelineEvent(input: UpdateEventInput) {
   const { error: updateError } = await supabase
     .from('timeline_events')
     .update({
+      couple_id: parsed.coupleId,
       event_date: parsed.eventDate,
       year,
       title: parsed.title,
