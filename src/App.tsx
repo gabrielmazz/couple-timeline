@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
+import { lazy, Suspense } from 'react'
 import { ProtectedRoute } from './components/auth/ProtectedRoute'
 import { AppBackgroundProvider } from './components/layout/AppBackgroundProvider'
 import { AppFrame } from './components/layout/AppFrame'
@@ -8,9 +9,13 @@ import { CalendarPage } from './pages/CalendarPage'
 import { GiftsPage } from './pages/GiftsPage'
 import { FutureMomentsPage } from './pages/FutureMomentsPage'
 import { LoginPage } from './pages/LoginPage'
+import { MiniGamesPage } from './pages/MiniGamesPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { RegisterPage } from './pages/RegisterPage'
 import { TimelinePage } from './pages/TimelinePage'
+import { TruthOrDarePage } from './pages/TruthOrDarePage'
+
+const CoupleQuizPage = lazy(() => import('./pages/CoupleQuizPage').then(({ CoupleQuizPage: page }) => ({ default: page })))
 
 export default function App() {
   return (
@@ -57,6 +62,42 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <FutureMomentsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/jogos"
+            element={
+              <ProtectedRoute>
+                <MiniGamesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/jogos/verdade-ou-desafio"
+            element={
+              <ProtectedRoute>
+                <TruthOrDarePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/jogos/quem-conhece-melhor"
+            element={
+              <ProtectedRoute>
+                <Suspense fallback={null}>
+                  <CoupleQuizPage />
+                </Suspense>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/jogos/quiz-do-casal"
+            element={
+              <ProtectedRoute>
+                <Suspense fallback={null}>
+                  <CoupleQuizPage />
+                </Suspense>
               </ProtectedRoute>
             }
           />

@@ -12,13 +12,36 @@ const envSupabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | un
 const supabaseUrl = envSupabaseUrl || defaultSupabaseUrl
 const supabaseKey = envSupabasePublishableKey || envSupabaseAnonKey || defaultSupabasePublishableKey
 
+const jwtIssuedAtFutureRetryDelayMs = 1000
+
+async function fetchWithJwtIssuedAtFutureRetry(input: RequestInfo | URL, init?: RequestInit) {
+	const response = await fetch(input, init)
+
+	if (response.status !== 401) {
+		return response
+	}
+
+	const responseBody = await response.clone().text()
+
+	if (!responseBody.toLowerCase().includes('jwt issued at future')) {
+		return response
+	}
+
+	await new Promise((resolve) => window.setTimeout(resolve, jwtIssuedAtFutureRetryDelayMs))
+
+	return fetch(input, init)
+}
+
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseKey)
 
 export const supabase = createClient<Database>(
   supabaseUrl,
   supabaseKey,
-  {
-    auth: {
+	{
+		global: {
+			fetch: fetchWithJwtIssuedAtFutureRetry,
+		},
+		auth: {
       // The session must only exist while this page is open. This prevents a
       // previous login from being restored when the user returns later.
       persistSession: false,
