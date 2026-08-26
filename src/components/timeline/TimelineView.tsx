@@ -1,5 +1,7 @@
 import { Alert, Button, Group, Image, Loader, Modal, Stack, Text } from '@mantine/core'
-import { CalendarHeart, Plus } from 'lucide-react'
+import { notifications } from '@mantine/notifications'
+import { useContextMenu } from 'mantine-contextmenu'
+import { CalendarHeart, Copy, Download, FlipHorizontal, FlipVertical, Plus } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type UIEvent, type WheelEvent } from 'react'
 import { Link } from 'react-router-dom'
 import type { Couple } from '../../types/database'
@@ -14,6 +16,107 @@ import CSSBlurText from './../../components/ui/BlurText.module.css'
 type PhotoPreview = {
 	src: string
 	alt: string
+}
+
+function getImageExtension(contentType: string) {
+	const extension = contentType.split('/')[1]?.split(';')[0]
+
+	if (extension === 'jpeg') {
+		return 'jpg'
+	}
+
+	return extension || 'jpg'
+}
+
+function getImageFileName(alt: string, contentType: string) {
+	const baseName = alt
+		.normalize('NFD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.replace(/[^a-zA-Z0-9]+/g, '-')
+		.replace(/^-|-$/g, '')
+		.toLowerCase()
+
+	return `${baseName || 'imagem-couple-timeline'}.${getImageExtension(contentType)}`
+}
+
+async function copyImageToClipboard(src: string) {
+	try {
+		if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
+			throw new Error('A cópia de imagens não é suportada neste navegador.')
+		}
+
+		const response = await fetch(src)
+		if (!response.ok) {
+			throw new Error('Não foi possível carregar a imagem.')
+		}
+
+		const blob = await response.blob()
+		if (!blob.type.startsWith('image/')) {
+			throw new Error('O arquivo não é uma imagem válida.')
+		}
+
+		await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
+		notifications.show({
+			color: 'green',
+			title: 'Imagem copiada',
+			message: 'A imagem está disponível na área de transferência.',
+		})
+	} catch {
+		try {
+			if (!navigator.clipboard?.writeText) {
+				throw new Error('A área de transferência não está disponível.')
+			}
+
+			await navigator.clipboard.writeText(src)
+			notifications.show({
+				color: 'yellow',
+				title: 'Link copiado',
+				message: 'Seu navegador não permitiu copiar a imagem diretamente, então copiamos o link.',
+			})
+		} catch {
+			notifications.show({
+				color: 'red',
+				title: 'Não foi possível copiar',
+				message: 'Verifique as permissões da área de transferência e tente novamente.',
+			})
+		}
+	}
+}
+
+async function downloadImage(src: string, alt: string) {
+	try {
+		const response = await fetch(src)
+		if (!response.ok) {
+			throw new Error('Não foi possível carregar a imagem.')
+		}
+
+		const blob = await response.blob()
+		const objectUrl = URL.createObjectURL(blob)
+		const link = document.createElement('a')
+		link.href = objectUrl
+		link.download = getImageFileName(alt, blob.type)
+		document.body.appendChild(link)
+		link.click()
+		link.remove()
+		window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+
+		notifications.show({
+			color: 'green',
+			title: 'Download iniciado',
+			message: 'A imagem foi enviada para seus downloads.',
+		})
+	} catch {
+		const link = document.createElement('a')
+		link.href = src
+		link.target = '_blank'
+		link.rel = 'noreferrer'
+		link.click()
+		notifications.show({
+			color: 'yellow',
+			title: 'Imagem aberta em nova aba',
+			message: 'O download direto foi bloqueado pelo servidor. Use o menu do navegador para salvar a imagem.',
+		})
+	}
 }
 
 export function TimelineView({
@@ -51,10 +154,13 @@ export function TimelineView({
 }) {
 	const [selectedEvent, setSelectedEvent] = useState<TimelineEventWithPhotos | null>(null)
 	const [photoPreview, setPhotoPreview] = useState<PhotoPreview | null>(null)
+	const [flipVertical, setFlipVertical] = useState(false)
+	const [flipHorizontal, setFlipHorizontal] = useState(false)
 	const [loadingEventPhotos, setLoadingEventPhotos] = useState(false)
 	const [eventPhotosError, setEventPhotosError] = useState<string | null>(null)
 	const selectedEventRequestRef = useRef(0)
 	const loadMoreRequestedRef = useRef(false)
+	const { hideContextMenu, showContextMenu } = useContextMenu()
 
 	const requestMoreEventsIfNeeded = useCallback((track: HTMLDivElement) => {
 		if (!hasMore || isLoadingMore || loadMoreRequestedRef.current) {
@@ -129,6 +235,24 @@ export function TimelineView({
 		setLoadingEventPhotos(false)
 		setEventPhotosError(null)
 	}, [])
+
+	const closePhotoPreview = useCallback(() => {
+		hideContextMenu()
+		setPhotoPreview(null)
+	}, [hideContextMenu])
+
+	const openPhotoPreview = useCallback((photo: PhotoPreview) => {
+		setFlipVertical(false)
+		setFlipHorizontal(false)
+		setPhotoPreview(photo)
+	}, [])
+
+	const photoTransform = [
+		flipHorizontal ? 'scaleX(-1)' : null,
+		flipVertical ? 'scaleY(-1)' : null,
+	]
+		.filter(Boolean)
+		.join(' ')
 
 	return (
 		<Stack gap="xl" py={{ base: 'lg', sm: 'xl' }}>
@@ -226,12 +350,12 @@ export function TimelineView({
 				showSource={includesChildren}
 				onClose={closeSelectedEvent}
 				onDeleted={onDeleted}
-				onPhotoPreview={setPhotoPreview}
+				onPhotoPreview={openPhotoPreview}
 			/>
 
 			<Modal
 				opened={Boolean(photoPreview)}
-				onClose={() => setPhotoPreview(null)}
+				onClose={closePhotoPreview}
 				centered
 				size="auto"
 				padding={0}
@@ -252,15 +376,47 @@ export function TimelineView({
 						type="button"
 						className="timeline-photo-preview-close"
 						aria-label="Fechar visualização da imagem"
-						onClick={() => setPhotoPreview(null)}
+						onClick={closePhotoPreview}
 					>
 						<Image
 							src={photoPreview.src}
 							alt={photoPreview.alt}
+							className="timeline-photo-preview-image"
 							fit="contain"
 							radius={8}
 							mah="88vh"
 							maw="92vw"
+							style={{
+								transform: photoTransform || undefined,
+								transformOrigin: 'center',
+							}}
+							onContextMenu={showContextMenu([
+								{
+									key: 'copy',
+									icon: <Copy size={16} />,
+									title: 'Copiar imagem',
+									onClick: () => copyImageToClipboard(photoPreview.src),
+								},
+								{
+									key: 'download',
+									icon: <Download size={16} />,
+									title: 'Baixar imagem',
+									onClick: () => downloadImage(photoPreview.src, photoPreview.alt),
+								},
+								{ key: 'divider' },
+								{
+									key: 'flipVertical',
+									icon: <FlipVertical size={16} />,
+									title: flipVertical ? 'Desvirar verticalmente' : 'Virar verticalmente',
+									onClick: () => setFlipVertical((value) => !value),
+								},
+								{
+									key: 'flipHorizontal',
+									icon: <FlipHorizontal size={16} />,
+									title: flipHorizontal ? 'Desvirar horizontalmente' : 'Virar horizontalmente',
+									onClick: () => setFlipHorizontal((value) => !value),
+								},
+							])}
 						/>
 					</button>
 				) : null}

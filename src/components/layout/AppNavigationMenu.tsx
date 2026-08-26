@@ -79,6 +79,8 @@ export function AppNavigationMenu() {
 		link,
 		isActive: label === 'Timeline'
 			? location.pathname.startsWith('/timeline/')
+			: label === 'Mini games'
+				? location.pathname.startsWith('/jogos')
 			: location.pathname === link,
 		onClick: (event) => {
 			event.preventDefault()
@@ -99,6 +101,7 @@ export function AppNavigationMenu() {
 			createMenuItem('Presentes', 'Ir para a lista de presentes', '/presentes'),
 			createMenuItem('Calendário', 'Ir para o calendário do casal', '/calendario'),
 			createMenuItem('Futuro', 'Ir para os planos do casal', '/futuro'),
+			createMenuItem('Mini games', 'Abrir os mini games do casal', '/jogos'),
 			createMenuItem('Perfil', 'Ir para o perfil', '/perfil'),
 			{
 				label: 'Sair',

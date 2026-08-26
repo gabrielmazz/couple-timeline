@@ -1,4 +1,5 @@
 import '@mantine/core/styles.css'
+import 'mantine-contextmenu/styles.css'
 import '@mantine/carousel/styles.css'
 import '@mantine/dates/styles.css'
 import '@mantine/dropzone/styles.css'
@@ -21,6 +22,7 @@ import { DateInput } from '@mantine/dates'
 import { Dropzone } from '@mantine/dropzone'
 import { ModalsProvider } from '@mantine/modals'
 import { Notifications } from '@mantine/notifications'
+import { ContextMenuProvider } from 'mantine-contextmenu'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
@@ -127,14 +129,16 @@ const theme = createTheme({
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <MantineProvider theme={theme} defaultColorScheme="dark">
-      <Notifications position="top-right" zIndex={5000} />
-      <ModalsProvider>
-        <BrowserRouter basename={routerBasename}>
-          <AuthProvider>
-            <App />
-          </AuthProvider>
-        </BrowserRouter>
-      </ModalsProvider>
+      <ContextMenuProvider>
+        <Notifications position="top-right" zIndex={5000} />
+        <ModalsProvider>
+          <BrowserRouter basename={routerBasename}>
+            <AuthProvider>
+              <App />
+            </AuthProvider>
+          </BrowserRouter>
+        </ModalsProvider>
+      </ContextMenuProvider>
     </MantineProvider>
   </StrictMode>,
 )
