@@ -4,8 +4,7 @@
 interface __BaseEnv_Env {
 	TIMELINE_IMAGES: R2Bucket;
 	READ_URL_TTL_SECONDS: "3600";
-	SUPABASE_URL: string;
-	SUPABASE_PUBLISHABLE_KEY: string;
+	FIREBASE_PROJECT_ID: "couple-timeline-3eae7";
 	IMAGE_SIGNING_SECRET: string;
 	ALLOWED_ORIGINS: string;
 }
@@ -20,7 +19,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "READ_URL_TTL_SECONDS" | "SUPABASE_URL" | "SUPABASE_PUBLISHABLE_KEY" | "IMAGE_SIGNING_SECRET" | "ALLOWED_ORIGINS">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "READ_URL_TTL_SECONDS" | "FIREBASE_PROJECT_ID" | "IMAGE_SIGNING_SECRET" | "ALLOWED_ORIGINS">> {}
 }
 
 // Begin runtime types

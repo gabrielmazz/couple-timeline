@@ -3,7 +3,7 @@ import {
 	Box,
 	Container,
 } from '@mantine/core'
-import { isSupabaseConfigured } from '../../lib/supabase/client'
+import { isFirebaseConfigured } from '../../lib/firebase/client'
 import { AppNavigationMenu } from './AppNavigationMenu'
 
 export function AppFrame({ children }: { children: React.ReactNode }) {
@@ -11,11 +11,10 @@ export function AppFrame({ children }: { children: React.ReactNode }) {
 		<Box className="app-shell">
 			<AppNavigationMenu />
 
-			{!isSupabaseConfigured ? (
+			{!isFirebaseConfigured ? (
 				<Container size="lg" mt="md">
-					<Alert color="yellow" radius={8} title="Supabase não configurado">
-						Preencha <code>VITE_SUPABASE_URL</code> e <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> no
-						arquivo <code>.env</code> para usar autenticação, banco e storage.
+					<Alert color="yellow" radius={8} title="Firebase não configurado">
+						Preencha as variáveis do Firebase no arquivo <code>.env</code> para usar o aplicativo.
 					</Alert>
 				</Container>
 			) : null}

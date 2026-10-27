@@ -3,6 +3,7 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export type TimelineVisibility = 'public' | 'private'
 export type CoupleRole = 'owner' | 'partner'
 export type CalendarEntryCategory = 'trip' | 'reservation' | 'appointment' | 'special_date' | 'other'
+export type CalendarEntryRecurrence = 'none' | 'yearly'
 export type EventCategory =
   | 'Primeiro encontro'
   | 'Primeiro beijo'
@@ -65,6 +66,21 @@ export type GiftPriority = 'low' | 'medium' | 'high'
 export type GiftStatus = 'wanted' | 'purchased' | 'received'
 export type FutureMomentCategory = 'Viagem' | 'Lugar' | 'Restaurante' | 'Filme ou série' | 'Meta' | 'Sonho' | 'Outro'
 export type FutureMomentStatus = 'planned' | 'in_progress' | 'completed'
+export type MonthlyPlanCategory =
+  | 'Restaurante'
+  | 'Café'
+  | 'Parque'
+  | 'Museu'
+  | 'Cinema'
+  | 'Teatro'
+  | 'Bar'
+  | 'Praia'
+  | 'Trilha'
+  | 'Centro cultural'
+  | 'Atividade'
+  | 'Outro'
+export type MonthlyPlanStatus = 'idea' | 'planned' | 'completed'
+export type MonthlyPlanSource = 'manual' | 'internal' | 'openstreetmap'
 
 export type Profile = {
   id: string
@@ -170,6 +186,7 @@ export type CoupleCalendarEntry = {
   event_time: string | null
   location_name: string | null
   category: CalendarEntryCategory
+  recurrence: CalendarEntryRecurrence
   reminder_days_before: number
   created_by: string | null
   created_at: string
@@ -187,6 +204,31 @@ export type FutureMoment = {
   location_name: string | null
   completed_at: string | null
   completed_event_id: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type CoupleMonthlyPlan = {
+  id: string
+  couple_id: string
+  month_start: string
+  title: string
+  description: string | null
+  category: MonthlyPlanCategory
+  status: MonthlyPlanStatus
+  scheduled_date: string | null
+  location_name: string | null
+  address: string | null
+  latitude: number | null
+  longitude: number | null
+  source: MonthlyPlanSource
+  source_place_id: string | null
+  google_maps_url: string | null
+  source_url: string | null
+  calendar_entry_id: string | null
+  completed_event_id: string | null
+  completed_at: string | null
   created_by: string | null
   created_at: string
   updated_at: string
@@ -381,6 +423,7 @@ export type Database = {
           event_time?: string | null
           location_name?: string | null
           category?: CalendarEntryCategory
+          recurrence?: CalendarEntryRecurrence
           reminder_days_before?: number
           created_by?: string | null
           created_at?: string
@@ -393,6 +436,7 @@ export type Database = {
           event_time?: string | null
           location_name?: string | null
           category?: CalendarEntryCategory
+          recurrence?: CalendarEntryRecurrence
           reminder_days_before?: number
           updated_at?: string
         }
@@ -424,6 +468,54 @@ export type Database = {
           location_name?: string | null
           completed_at?: string | null
           completed_event_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      couple_monthly_plans: {
+        Row: CoupleMonthlyPlan
+        Insert: {
+          id?: string
+          couple_id: string
+          month_start: string
+          title: string
+          description?: string | null
+          category?: MonthlyPlanCategory
+          status?: MonthlyPlanStatus
+          scheduled_date?: string | null
+          location_name?: string | null
+          address?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          source?: MonthlyPlanSource
+          source_place_id?: string | null
+          google_maps_url?: string | null
+          source_url?: string | null
+          calendar_entry_id?: string | null
+          completed_event_id?: string | null
+          completed_at?: string | null
+          created_by: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          month_start?: string
+          title?: string
+          description?: string | null
+          category?: MonthlyPlanCategory
+          status?: MonthlyPlanStatus
+          scheduled_date?: string | null
+          location_name?: string | null
+          address?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          source?: MonthlyPlanSource
+          source_place_id?: string | null
+          google_maps_url?: string | null
+          source_url?: string | null
+          calendar_entry_id?: string | null
+          completed_event_id?: string | null
+          completed_at?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -491,6 +583,19 @@ export type Database = {
           target_moment_id: string
         }
         Returns: string
+      }
+      create_calendar_entry_from_monthly_plan: {
+        Args: {
+          target_plan_id: string
+        }
+        Returns: string
+      }
+      complete_monthly_plan: {
+        Args: {
+          target_plan_id: string
+          create_timeline_memory?: boolean
+        }
+        Returns: string | null
       }
       toggle_timeline_event_comment_reaction: {
         Args: {

@@ -1,5 +1,6 @@
 import type {
   CalendarEntryCategory,
+  CalendarEntryRecurrence,
   Couple,
   CoupleCalendarEntry,
   CoupleRole,
@@ -14,6 +15,7 @@ export type CalendarEntryFormModel = {
   eventTime: string
   locationName: string
   category: CalendarEntryCategory
+  recurrence: CalendarEntryRecurrence
   reminderDaysBefore: string
 }
 

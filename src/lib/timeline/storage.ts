@@ -1,10 +1,9 @@
-import { supabase } from '../supabase/client'
+import { firebaseAuth } from '../firebase/client'
 
-export const TIMELINE_BUCKET = 'timeline-photos'
 export const MAX_IMAGE_SIZE = 5 * 1024 * 1024
 export const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
 
-type TimelineImageProvider = 'supabase' | 'r2' | 'r2-public'
+type TimelineImageProvider = 'r2' | 'r2-public'
 
 type SignedUrlMapResponse = {
   urls?: Record<string, string | null>
@@ -36,11 +35,9 @@ export const timelineImageProvider: TimelineImageProvider =
     ? 'r2'
     : normalizedImageProvider === 'r2-public' || normalizedImageProvider === 'r2-dev'
       ? 'r2-public'
-      : normalizedImageProvider === 'supabase'
-        ? 'supabase'
-        : hasExplicitTimelineImagePublicUrl
-          ? 'r2-public'
-          : 'supabase'
+      : hasExplicitTimelineImagePublicUrl
+      ? 'r2-public'
+      : 'r2'
 
 function isR2PublicUrl(value: string) {
   try {
@@ -98,16 +95,7 @@ export function buildPhotoPath(coupleId: string, eventId: string, file: File, in
 }
 
 async function getAccessToken() {
-  const {
-    data: { session },
-    error,
-  } = await supabase.auth.getSession()
-
-  if (error) {
-    throw error
-  }
-
-  return session?.access_token ?? null
+  return firebaseAuth.currentUser?.getIdToken() ?? null
 }
 
 function ensureTimelineImageApiUrl() {
@@ -134,31 +122,6 @@ async function parseImageApiResponse<T extends { error?: string }>(response: Res
   }
 
   return data
-}
-
-async function uploadEventImagesToSupabase(coupleId: string, eventId: string, files: File[]) {
-  const uploaded: string[] = []
-
-  for (const [index, file] of files.entries()) {
-    const path = buildPhotoPath(coupleId, eventId, file, index)
-    const { error } = await supabase.storage.from(TIMELINE_BUCKET).upload(path, file, {
-      cacheControl: '3600',
-      contentType: file.type,
-      upsert: false,
-    })
-
-    if (error) {
-      if (uploaded.length > 0) {
-        await removeEventImages(uploaded)
-      }
-
-      throw error
-    }
-
-    uploaded.push(path)
-  }
-
-  return uploaded
 }
 
 async function uploadEventImagesToR2(coupleId: string, eventId: string, files: File[]) {
@@ -218,22 +181,10 @@ export async function uploadEventImages(coupleId: string, eventId: string, files
   }
 
   if (timelineImageProvider === 'r2-public') {
-    throw new Error('O modo R2 público é apenas para leitura. Use Supabase ou Worker para enviar novas imagens.')
+    throw new Error('O modo R2 público é apenas para leitura. Use o Worker para enviar novas imagens.')
   }
 
-  return uploadEventImagesToSupabase(coupleId, eventId, files)
-}
-
-async function removeEventImagesFromSupabase(paths: string[]) {
-  if (paths.length === 0) {
-    return
-  }
-
-  const { error } = await supabase.storage.from(TIMELINE_BUCKET).remove(paths)
-
-  if (error) {
-    throw error
-  }
+  throw new Error('Configure o serviço de imagens da Cloudflare.')
 }
 
 async function removeEventImagesFromR2(paths: string[]) {
@@ -260,6 +211,19 @@ async function removeEventImagesFromR2(paths: string[]) {
   await parseImageApiResponse<DeleteImagesResponse>(response)
 }
 
+export async function copyEventImages(paths: string[], targetCoupleId: string) {
+  if (!paths.length) return new Map<string, string>()
+  const token = await getAccessToken()
+  if (!token) throw new Error('Você precisa estar autenticado para mover imagens.')
+  const response = await fetch(`${ensureTimelineImageApiUrl()}/api/images/copy`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paths, targetCoupleId }),
+  })
+  const data = await parseImageApiResponse<{ paths?: Record<string, string>; error?: string }>(response)
+  if (!data.paths || paths.some((path) => !data.paths?.[path])) throw new Error('Não foi possível copiar todas as imagens.')
+  return new Map(Object.entries(data.paths))
+}
+
 export async function removeEventImages(paths: string[]) {
   if (timelineImageProvider === 'r2') {
     await removeEventImagesFromR2(paths)
@@ -267,44 +231,10 @@ export async function removeEventImages(paths: string[]) {
   }
 
   if (timelineImageProvider === 'r2-public') {
-    throw new Error('O modo R2 público é apenas para leitura. Use Supabase ou Worker para remover imagens.')
+    throw new Error('O modo R2 público é apenas para leitura. Use o Worker para remover imagens.')
   }
 
-  await removeEventImagesFromSupabase(paths)
-}
-
-async function createSupabaseSignedUrl(path: string) {
-  const { data, error } = await supabase.storage
-    .from(TIMELINE_BUCKET)
-    .createSignedUrl(path, 60 * 60)
-
-  if (error) {
-    return null
-  }
-
-  return data.signedUrl
-}
-
-async function createSupabaseSignedUrlMap(paths: string[]) {
-  const uniquePaths = Array.from(new Set(paths.filter(Boolean)))
-
-  if (uniquePaths.length === 0) {
-    return new Map<string, string | null>()
-  }
-
-  const entries = await Promise.all(
-    splitIntoBatches(uniquePaths, MAX_SIGNED_URLS_PER_BATCH).map(async (batch) => {
-      const { data, error } = await supabase.storage.from(TIMELINE_BUCKET).createSignedUrls(batch, 60 * 60)
-
-      if (error) {
-        throw error
-      }
-
-      return data.map((item) => [item.path, item.signedUrl] as const)
-    }),
-  )
-
-  return new Map(entries.flat())
+  throw new Error('Configure o serviço de imagens da Cloudflare.')
 }
 
 function splitIntoBatches<T>(items: T[], batchSize: number) {
@@ -383,7 +313,7 @@ export async function createSignedUrl(path: string) {
     return createR2PublicUrlMap([path]).get(path) ?? null
   }
 
-  return createSupabaseSignedUrl(path)
+  return null
 }
 
 export async function createSignedUrlMap(paths: string[]) {
@@ -395,5 +325,5 @@ export async function createSignedUrlMap(paths: string[]) {
     return createR2PublicUrlMap(paths)
   }
 
-  return createSupabaseSignedUrlMap(paths)
+  return new Map<string, string | null>()
 }

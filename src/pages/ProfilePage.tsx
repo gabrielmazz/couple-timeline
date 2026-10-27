@@ -152,8 +152,8 @@ export function ProfilePage() {
       })
       notifications.show({
         color: 'green',
-        title: 'Pessoa vinculada',
-        message: 'Os perfis e as timelines agora são compartilhados entre as duas contas.',
+        title: 'Convite criado',
+        message: 'A pessoa deve entrar com esse e-mail confirmado e aceitar o convite no dashboard.',
       })
       setPartnerEmail('')
       await loadProfile()

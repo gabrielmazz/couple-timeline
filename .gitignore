@@ -8,6 +8,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+node_modules-windows-backup
 dist
 dist-ssr
 *.local
@@ -27,6 +28,7 @@ dist-ssr
 *.db
 *.sqlite
 *.sqlite3
+
 # Environment files (keep local credentials out of Git)
 .env
 .env.*

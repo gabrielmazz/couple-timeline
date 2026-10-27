@@ -1,4 +1,4 @@
-import type { TimelineEvent } from '../../types/database'
+import type { CoupleRole, TimelineEvent } from '../../types/database'
 import { additionalCoupleQuizQuestions } from './coupleQuizExpansion'
 
 export type QuizCategory =
@@ -69,6 +69,17 @@ export type QuizAction =
 	| { type: 'reset' }
 
 export type RandomSource = () => number
+
+export function getQuizPlayers(
+	currentPlayerName: string | null | undefined,
+	partnerPlayerName: string | null | undefined,
+	currentMemberRole: CoupleRole,
+): [string, string] {
+	const ownerName = currentMemberRole === 'owner' ? currentPlayerName : partnerPlayerName
+	const partnerName = currentMemberRole === 'owner' ? partnerPlayerName : currentPlayerName
+
+	return [ownerName?.trim() || 'Pessoa 1', partnerName?.trim() || 'Pessoa 2']
+}
 
 export type QuizQuestionFilters = {
 	categories: QuizCategory[]

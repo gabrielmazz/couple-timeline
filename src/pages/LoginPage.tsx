@@ -15,7 +15,8 @@ import { LogIn } from 'lucide-react'
 import { useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../components/auth/auth-context'
-import { supabase } from '../lib/supabase/client'
+import { signInWithEmailAndPassword } from 'firebase/auth'
+import { firebaseAuth } from '../lib/firebase/client'
 
 type LoginForm = {
   email: string
@@ -43,14 +44,7 @@ export function LoginPage() {
     setSubmitting(true)
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: values.email,
-        password: values.password,
-      })
-
-      if (error) {
-        throw error
-      }
+      await signInWithEmailAndPassword(firebaseAuth, values.email.trim(), values.password)
 
       const nextPath =
         typeof location.state === 'object' &&

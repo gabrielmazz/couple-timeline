@@ -17,64 +17,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  migrate:
-    runs-on: ubuntu-latest
-    env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      SUPABASE_PROJECT_REF: loafkhnjrwhppddwztof
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Validate Supabase credentials
-        run: |
-          test -n "$SUPABASE_ACCESS_TOKEN" || (echo "Missing SUPABASE_ACCESS_TOKEN" && exit 1)
-
-      - name: Link Supabase project
-        run: |
-          args=(--project-ref "$SUPABASE_PROJECT_REF")
-          if [ -n "${SUPABASE_DB_PASSWORD:-}" ]; then
-            args+=(--password "$SUPABASE_DB_PASSWORD")
-          fi
-
-          npx supabase link "${args[@]}"
-
-      - name: Preview database migrations
-        run: |
-          args=(--linked --include-all --dry-run)
-          if [ -n "${SUPABASE_DB_PASSWORD:-}" ]; then
-            args+=(--password "$SUPABASE_DB_PASSWORD")
-          fi
-
-          npx supabase db push "${args[@]}"
-
-      - name: Apply database migrations
-        run: |
-          args=(--linked --include-all --yes)
-          if [ -n "${SUPABASE_DB_PASSWORD:-}" ]; then
-            args+=(--password "$SUPABASE_DB_PASSWORD")
-          fi
-
-          npx supabase db push "${args[@]}"
-
   deploy-worker:
     runs-on: ubuntu-latest
     env:
       VITE_TIMELINE_IMAGE_PROVIDER: r2
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
-      SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY || secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
       IMAGE_SIGNING_SECRET: ${{ secrets.IMAGE_SIGNING_SECRET }}
       ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS || secrets.ALLOWED_ORIGINS }}
     steps:
@@ -104,8 +52,6 @@ jobs:
         run: |
           test -n "$CLOUDFLARE_API_TOKEN" || (echo "Missing CLOUDFLARE_API_TOKEN" && exit 1)
           test -n "$CLOUDFLARE_ACCOUNT_ID" || (echo "Missing CLOUDFLARE_ACCOUNT_ID" && exit 1)
-          test -n "$SUPABASE_URL" || (echo "Missing SUPABASE_URL" && exit 1)
-          test -n "$SUPABASE_PUBLISHABLE_KEY" || (echo "Missing SUPABASE_PUBLISHABLE_KEY" && exit 1)
           test -n "$IMAGE_SIGNING_SECRET" || (echo "Missing IMAGE_SIGNING_SECRET" && exit 1)
           test -n "$ALLOWED_ORIGINS" || (echo "Missing ALLOWED_ORIGINS" && exit 1)
 
@@ -115,8 +61,6 @@ jobs:
           node <<'NODE'
           const fs = require('node:fs')
           const names = [
-            'SUPABASE_URL',
-            'SUPABASE_PUBLISHABLE_KEY',
             'IMAGE_SIGNING_SECRET',
             'ALLOWED_ORIGINS',
           ]
@@ -131,13 +75,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     needs:
-      - migrate
       - deploy-worker
     env:
-      VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
-      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY || secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY || 'AIzaSyDz7Lo4Q7TQMRWpKAdO7cBmyiujfYqiBJI' }}
+      VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN || 'couple-timeline-3eae7.firebaseapp.com' }}
+      VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID || 'couple-timeline-3eae7' }}
+      VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID || '1:277719898258:web:511b9e031a599fac92ee4b' }}
       VITE_TIMELINE_IMAGE_PROVIDER: r2
       VITE_TIMELINE_IMAGE_API_URL: ${{ vars.VITE_TIMELINE_IMAGE_API_URL || secrets.VITE_TIMELINE_IMAGE_API_URL || 'https://couple-timeline.gabriel-mazzuco.workers.dev' }}
+      VITE_BASE_PATH: /couple-timeline/
       VITE_TIMELINE_IMAGE_PUBLIC_URL: ${{ vars.VITE_TIMELINE_IMAGE_PUBLIC_URL || secrets.VITE_TIMELINE_IMAGE_PUBLIC_URL }}
     steps:
       - name: Checkout

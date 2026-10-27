@@ -30,12 +30,14 @@ import {
 	Trash2,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { reload, sendEmailVerification } from 'firebase/auth'
 import { Link } from 'react-router-dom'
 import { useAppBackground } from '../components/layout/AppBackgroundContext'
 import { TimelineYearSelector, type TimelineSortOrder } from '../components/timeline/TimelineYearSelector'
-import { createCouple, deleteChildTimeline, updateChildTimeline } from '../lib/timeline/actions'
+import { acceptInvite, createCouple, deleteChildTimeline, listPendingInvites, updateChildTimeline } from '../lib/timeline/actions'
 import { ensureProfile, fetchTimelineBackgroundImages, getUserTimelineTree } from '../lib/timeline/queries'
 import { getErrorMessage } from '../lib/utils'
+import { firebaseAuth } from '../lib/firebase/client'
 import type { CoupleRole, TimelineVisibility } from '../types/database'
 import type { CoupleListItem, TimelineTree, TimelineTreeItem } from '../types/timeline'
 
@@ -180,6 +182,9 @@ export function DashboardPage() {
 	const [selectedMonth, setSelectedMonth] = useState<number | null>(currentMonth)
 	const [sortOrder, setSortOrder] = useState<TimelineSortOrder>('asc')
 	const [error, setError] = useState<string | null>(null)
+	const [invites, setInvites] = useState<Awaited<ReturnType<typeof listPendingInvites>>>([])
+	const [acceptingInvite, setAcceptingInvite] = useState<string | null>(null)
+	const [emailVerified, setEmailVerified] = useState(true)
 	const form = useForm<CoupleForm>({
 		initialValues: {
 			name: '',
@@ -201,8 +206,15 @@ export function DashboardPage() {
 		setError(null)
 
 		try {
+			if (firebaseAuth.currentUser) {
+				await reload(firebaseAuth.currentUser)
+				await firebaseAuth.currentUser.getIdToken(true)
+				setEmailVerified(firebaseAuth.currentUser.emailVerified)
+			}
 			await ensureProfile()
-			setTree(await getUserTimelineTree())
+			const nextTree = await getUserTimelineTree()
+			setTree(nextTree)
+			setInvites(nextTree ? [] : await listPendingInvites())
 		} catch (loadError) {
 			setError(getErrorMessage(loadError, 'Não foi possível carregar.'))
 		} finally {
@@ -252,6 +264,29 @@ export function DashboardPage() {
 	}, [selectedMonth, selectedYear, sortOrder, tree?.children])
 
 	const canManageRelationship = tree?.memberRole === 'owner'
+
+	async function handleAcceptInvite(id: string) {
+		setAcceptingInvite(id)
+		try {
+			await acceptInvite(id)
+			await loadTree()
+			notifications.show({ color: 'green', title: 'Convite aceito', message: 'A timeline compartilhada já está disponível.' })
+		} catch (inviteError) {
+			notifications.show({ color: 'red', title: 'Não foi possível aceitar o convite', message: getErrorMessage(inviteError) })
+		} finally {
+			setAcceptingInvite(null)
+		}
+	}
+
+	async function resendVerification() {
+		try {
+			if (!firebaseAuth.currentUser) throw new Error('Entre novamente para confirmar seu e-mail.')
+			await sendEmailVerification(firebaseAuth.currentUser)
+			notifications.show({ color: 'green', title: 'E-mail enviado', message: 'Abra a mensagem recebida e confirme seu endereço.' })
+		} catch (verificationError) {
+			notifications.show({ color: 'red', title: 'Não foi possível enviar a confirmação', message: getErrorMessage(verificationError) })
+		}
+	}
 
 	function openCreateModal() {
 		form.setValues({
@@ -338,6 +373,22 @@ export function DashboardPage() {
 	return (
 		<Container size="lg" py={{ base: 'lg', sm: 'xl' }}>
 			<Stack gap="xl">
+				{!emailVerified && !tree ? (
+					<Alert color="yellow" title="Confirme seu e-mail">
+						<Stack gap="sm">
+							<Text size="sm">Para receber e aceitar convites, confirme o endereço de e-mail da sua conta. Depois, atualize esta página.</Text>
+							<Button size="xs" variant="light" onClick={() => void resendVerification()}>Enviar confirmação novamente</Button>
+						</Stack>
+					</Alert>
+				) : null}
+				{invites.map((invite) => (
+					<Alert key={invite.id} color="pink" title="Convite para uma timeline">
+						<Stack gap="sm">
+							<Text size="sm">Você recebeu um convite para compartilhar uma timeline. Confirme seu e-mail antes de aceitar.</Text>
+							<Button size="xs" color="pink" loading={acceptingInvite === invite.id} onClick={() => void handleAcceptInvite(invite.id)}>Aceitar convite</Button>
+						</Stack>
+					</Alert>
+				))}
 				<Group justify="space-between" align="flex-end" gap="lg">
 					<Stack gap={4}>
 						<Text c="var(--palette-blush)" fw={800} tt="uppercase" size="xs">

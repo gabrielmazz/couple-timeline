@@ -15,19 +15,14 @@ import { UserPlus } from 'lucide-react'
 import { useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../components/auth/auth-context'
-import { supabase } from '../lib/supabase/client'
+import { createUserWithEmailAndPassword, sendEmailVerification, updateProfile } from 'firebase/auth'
+import { firebaseAuth } from '../lib/firebase/client'
 import { ensureProfile } from '../lib/timeline/queries'
 
 type RegisterForm = {
   name: string
   email: string
   password: string
-}
-
-function getEmailConfirmationRedirectUrl() {
-  const appBaseUrl = new URL(import.meta.env.BASE_URL, window.location.origin)
-
-  return new URL('dashboard', appBaseUrl).toString()
 }
 
 export function RegisterPage() {
@@ -51,35 +46,17 @@ export function RegisterPage() {
     setSubmitting(true)
 
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email: values.email,
-        password: values.password,
-        options: {
-          emailRedirectTo: getEmailConfirmationRedirectUrl(),
-          data: {
-            name: values.name,
-          },
-        },
-      })
-
-      if (error) {
-        throw error
-      }
-
+      const credential = await createUserWithEmailAndPassword(firebaseAuth, values.email.trim(), values.password)
+      await updateProfile(credential.user, { displayName: values.name.trim() })
+      await sendEmailVerification(credential.user)
       await refreshSession()
-
-      if (data.session) {
-        await ensureProfile(values.name)
-        navigate('/dashboard')
-        return
-      }
-
+      await ensureProfile(values.name)
       notifications.show({
         color: 'green',
         title: 'Cadastro criado',
-        message: 'Confirme seu e-mail antes de entrar, se a confirmação estiver ativa no Supabase.',
+        message: 'Enviamos uma mensagem para confirmar seu e-mail.',
       })
-      navigate('/login')
+      navigate('/dashboard')
     } catch (error) {
       notifications.show({
         color: 'red',

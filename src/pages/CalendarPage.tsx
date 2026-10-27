@@ -65,6 +65,7 @@ const EMPTY_FORM: CalendarEntryFormModel = {
   eventTime: '',
   locationName: '',
   category: 'other',
+  recurrence: 'none',
   reminderDaysBefore: '0',
 }
 
@@ -376,6 +377,7 @@ export function CalendarPage() {
       eventTime: formatTime(entry.event_time) ?? '',
       locationName: entry.location_name ?? '',
       category: entry.category,
+      recurrence: entry.recurrence,
       reminderDaysBefore: String(entry.reminder_days_before),
     })
     form.resetDirty()

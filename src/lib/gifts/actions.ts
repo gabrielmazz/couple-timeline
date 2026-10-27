@@ -1,7 +1,8 @@
 import { z } from 'zod'
-import { supabase } from '../supabase/client'
+import { doc, runTransaction, setDoc } from 'firebase/firestore'
+import { firestore } from '../firebase/client'
 import { requireUser } from '../timeline/queries'
-import type { GiftCategory, GiftStatus } from '../../types/database'
+import type { CoupleGift, GiftCategory, GiftStatus } from '../../types/database'
 
 export const giftCategories = [
   'Tecnologia',
@@ -87,16 +88,9 @@ function toDatabaseInput(input: GiftInput) {
 export async function createGift(input: GiftInput) {
   const user = await requireUser()
   const values = toDatabaseInput(input)
-  const { data, error } = await supabase
-    .from('couple_gifts')
-    .insert({ ...values, created_by: user.id })
-    .select('*')
-    .single()
-
-  if (error) {
-    throw error
-  }
-
+  const now = new Date().toISOString()
+  const data: CoupleGift = { id: crypto.randomUUID(), ...values, created_by: user.id, created_at: now, updated_at: now }
+  await setDoc(doc(firestore, 'couple_gifts', data.id), data)
   return data
 }
 
@@ -106,44 +100,34 @@ export async function updateGift(input: UpdateGiftInput) {
   const { couple_id: coupleId, recipient_id: recipientId, ...values } = toDatabaseInput(input)
   void coupleId
   void recipientId
-  const { data, error } = await supabase
-    .from('couple_gifts')
-    .update({ ...values, updated_at: new Date().toISOString() })
-    .eq('id', giftId)
-    .eq('created_by', user.id)
-    .select('*')
-    .single()
-
-  if (error) {
-    throw error
-  }
-
-  return data
+  return runTransaction(firestore, async (tx) => {
+    const ref = doc(firestore, 'couple_gifts', giftId)
+    const current = (await tx.get(ref)).data() as CoupleGift | undefined
+    if (!current || current.created_by !== user.id) throw new Error('Presente não encontrado ou sem permissão.')
+    const data = { ...current, ...values, updated_at: new Date().toISOString() }
+    tx.set(ref, data)
+    return data
+  })
 }
 
 export async function deleteGift(giftId: string) {
   const user = await requireUser()
   const parsedGiftId = giftIdSchema.parse(giftId)
-  const { error } = await supabase
-    .from('couple_gifts')
-    .delete()
-    .eq('id', parsedGiftId)
-    .eq('created_by', user.id)
-
-  if (error) {
-    throw error
-  }
+  await runTransaction(firestore, async (tx) => {
+    const ref = doc(firestore, 'couple_gifts', parsedGiftId)
+    const current = (await tx.get(ref)).data() as CoupleGift | undefined
+    if (!current || current.created_by !== user.id) throw new Error('Presente não encontrado ou sem permissão.')
+    tx.delete(ref)
+  })
 }
 
 export async function updateGiftStatus({ giftId, status }: UpdateGiftStatusInput) {
-  await requireUser()
+  const user = await requireUser()
   const parsedGiftId = giftIdSchema.parse(giftId)
-  const { error } = await supabase.rpc('update_couple_gift_status', {
-    target_gift_id: parsedGiftId,
-    next_status: status,
+  await runTransaction(firestore, async (tx) => {
+    const ref = doc(firestore, 'couple_gifts', parsedGiftId)
+    const current = (await tx.get(ref)).data() as CoupleGift | undefined
+    if (!current || (current.created_by !== user.id && status === 'wanted')) throw new Error('Você não pode alterar o status deste presente.')
+    tx.update(ref, { status, updated_at: new Date().toISOString() })
   })
-
-  if (error) {
-    throw error
-  }
 }

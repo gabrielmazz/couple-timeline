@@ -1,5 +1,7 @@
 import { z } from 'zod'
-import { supabase } from '../supabase/client'
+import { updateProfile } from 'firebase/auth'
+import { doc, updateDoc } from 'firebase/firestore'
+import { firebaseAuth, firestore } from '../firebase/client'
 import { requireUser } from '../timeline/queries'
 import type { ProfileFormModel, RelationshipFormModel } from '../../types/profile'
 
@@ -27,26 +29,13 @@ export async function updateUserProfile(input: ProfileFormModel) {
   const parsed = profileSchema.parse(input)
   ensureDateIsNotInFuture(parsed.birthDate ?? '', 'A data de nascimento não pode estar no futuro.')
 
-  const { error: authError } = await supabase.auth.updateUser({
-    data: { name: parsed.name },
-  })
-
-  if (authError) {
-    throw authError
-  }
-
-  const { error } = await supabase
-    .from('profiles')
-    .update({
+  if (!firebaseAuth.currentUser) throw new Error('Você precisa estar autenticado.')
+  await updateProfile(firebaseAuth.currentUser, { displayName: parsed.name })
+  await updateDoc(doc(firestore, 'profiles', user.id), {
       name: parsed.name,
       birth_date: parsed.birthDate || null,
       bio: parsed.bio || null,
     })
-    .eq('id', user.id)
-
-  if (error) {
-    throw error
-  }
 }
 
 export async function updateRelationshipDetails(input: RelationshipFormModel & { coupleId: string }) {
@@ -54,12 +43,5 @@ export async function updateRelationshipDetails(input: RelationshipFormModel & {
   const parsed = relationshipSchema.parse(input)
   ensureDateIsNotInFuture(parsed.startedAt ?? '', 'A data do relacionamento não pode estar no futuro.')
 
-  const { error } = await supabase.rpc('update_relationship_started_at', {
-    target_couple_id: parsed.coupleId,
-    relationship_start_date: parsed.startedAt || null,
-  })
-
-  if (error) {
-    throw error
-  }
+  await updateDoc(doc(firestore, 'couples', parsed.coupleId), { relationship_started_at: parsed.startedAt || null })
 }

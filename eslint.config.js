@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', 'worker/worker-configuration.d.ts']),
+  globalIgnores(['dist', 'node_modules-windows-backup', 'worker/worker-configuration.d.ts']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
