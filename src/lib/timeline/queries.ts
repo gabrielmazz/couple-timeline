@@ -1,54 +1,9 @@
-import { supabase } from '../supabase/client'
+import { collection, doc, getDoc, getDocs, query, setDoc, where } from 'firebase/firestore'
+import { firebaseAuth, firestore } from '../firebase/client'
 import { getBackgroundImagesFromUrls } from './background'
 import { createSignedUrlMap } from './storage'
-import type { Couple, CoupleMember, CoupleRole, TimelineEvent, TimelinePhoto } from '../../types/database'
-import type {
-  TimelineCursor,
-  TimelineEventCommentWithAuthor,
-  TimelineEventWithPhotos,
-  TimelineFilters,
-  TimelinePage,
-  TimelinePhotoWithUrl,
-  TimelineTree,
-  TimelineTreeItem,
-} from '../../types/timeline'
-
-type MemberCoupleRow = {
-  role: CoupleRole
-  couples: Couple
-}
-
-type EventWithPhotosRow = TimelineEvent & {
-  timeline_photos: TimelinePhoto[] | null
-}
-
-type BackgroundPhotoPathRow = Pick<TimelinePhoto, 'storage_path' | 'position'>
-
-type BackgroundEventRow = Pick<TimelineEvent, 'cover_photo_path'> & {
-  timeline_photos: BackgroundPhotoPathRow[] | null
-}
-
-type TimelinePhotosRow = Pick<TimelineEvent, 'cover_photo_path'> & {
-  timeline_photos: TimelinePhoto[] | null
-}
-
-type EventCommentRow = {
-  id: string
-  event_id: string
-  couple_id: string
-  parent_comment_id: string | null
-  author_id: string
-  content: string
-  created_at: string
-  updated_at: string
-  timeline_event_comment_reactions: {
-    id: string
-    comment_id: string
-    user_id: string
-    emoji: string
-    created_at: string
-  }[] | null
-}
+import type { Couple, CoupleMember, CoupleRole, Profile, TimelineEvent, TimelineEventComment, TimelineEventCommentReaction, TimelinePhoto } from '../../types/database'
+import type { TimelineCursor, TimelineEventCommentWithAuthor, TimelineEventWithPhotos, TimelineFilters, TimelinePage, TimelinePhotoWithUrl, TimelineTree, TimelineTreeItem } from '../../types/timeline'
 
 export type FetchTimelineOptions = {
   cursor?: TimelineCursor | null
@@ -56,522 +11,211 @@ export type FetchTimelineOptions = {
   pageSize?: number
 }
 
-const DEFAULT_TIMELINE_FILTERS: TimelineFilters = {
-  year: null,
-  month: null,
-  sortOrder: 'asc',
-}
+const DEFAULT_TIMELINE_FILTERS: TimelineFilters = { year: null, month: null, sortOrder: 'asc' }
 const DEFAULT_TIMELINE_PAGE_SIZE = 12
 const MAX_TIMELINE_PAGE_SIZE = 48
 const BACKGROUND_EVENT_LIMIT = 48
-const TIMELINE_EVENT_SELECT =
-  'id, couple_id, event_date, year, title, subtitle, description, location_name, event_time, category, tags, music_url, cover_photo_path, created_by, created_at, updated_at'
+
+async function listByField<T>(collectionName: string, field: string, value: string): Promise<T[]> {
+  const result = await getDocs(query(collection(firestore, collectionName), where(field, '==', value)))
+  return result.docs.map((item) => ({ ...item.data(), id: item.id }) as T)
+}
+
+async function getRow<T>(collectionName: string, id: string): Promise<T | null> {
+  const result = await getDoc(doc(firestore, collectionName, id))
+  return result.exists() ? ({ ...result.data(), id: result.id } as T) : null
+}
+
+async function listEvents(coupleIds: string[]): Promise<TimelineEvent[]> {
+  const uniqueIds = [...new Set(coupleIds.filter(Boolean))]
+  const groups = await Promise.all(uniqueIds.map((id) => listByField<TimelineEvent>('timeline_events', 'couple_id', id)))
+  return groups.flat()
+}
+
+function sortPhotos(photos: TimelinePhoto[]) {
+  return photos.slice().sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+}
+
+async function getPhotos(eventId: string) {
+  return sortPhotos(await listByField<TimelinePhoto>('timeline_photos', 'event_id', eventId))
+}
 
 export async function getCurrentUser() {
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser()
-
-  if (error) {
-    throw error
-  }
-
-  return user
+  await firebaseAuth.authStateReady()
+  const user = firebaseAuth.currentUser
+  return user ? { id: user.uid, uid: user.uid, email: user.email, displayName: user.displayName } : null
 }
 
 export async function requireUser() {
   const user = await getCurrentUser()
-
-  if (!user) {
-    throw new Error('Você precisa estar autenticado para continuar.')
-  }
-
+  if (!user) throw new Error('Você precisa estar autenticado para continuar.')
   return user
 }
 
 export async function ensureProfile(name?: string | null) {
   const user = await requireUser()
-
-  const { error } = await supabase.from('profiles').upsert({
-    id: user.id,
-    name: name || user.user_metadata.name || user.email || null,
-    email: user.email ?? null,
-  })
-
-  if (error) {
-    throw error
+  const ref = doc(firestore, 'profiles', user.id)
+  const current = await getDoc(ref)
+  if (current.exists()) {
+    if (name) await setDoc(ref, { name, email: user.email }, { merge: true })
+    return
   }
+  await setDoc(ref, {
+    id: user.id,
+    name: name || user.displayName || user.email || null,
+    email: user.email ?? null,
+    birth_date: null,
+    bio: null,
+    created_at: new Date().toISOString(),
+  })
 }
 
 export async function getUserTimelineTree(): Promise<TimelineTree | null> {
   const user = await requireUser()
-  const { data: membershipData, error: membershipError } = await supabase
-    .from('couple_members')
-    .select('role, couples!inner(*)')
-    .eq('user_id', user.id)
-    .maybeSingle()
-
-  if (membershipError) {
-    throw membershipError
-  }
-
-  if (!membershipData) {
-    return null
-  }
-
-  const membership = membershipData as unknown as MemberCoupleRow
-  const root = membership.couples
-  const [childrenResult, partnerResult] = await Promise.all([
-    supabase
-      .from('couples')
-      .select('*')
-      .eq('parent_id', root.id)
-      .order('created_at', { ascending: true }),
-    supabase
-      .from('couple_members')
-      .select('id')
-      .eq('couple_id', root.id)
-      .eq('role', 'partner')
-      .maybeSingle(),
+  const rootRef = await getDoc(doc(firestore, 'user_roots', user.id))
+  if (!rootRef.exists()) return null
+  const rootId = rootRef.data().root_id as string
+  const [root, access, children, members] = await Promise.all([
+    getRow<Couple>('couples', rootId),
+    getDoc(doc(firestore, 'access', rootId, 'members', user.id)),
+    listByField<Couple>('couples', 'parent_id', rootId),
+    listByField<CoupleMember>('couple_members', 'couple_id', rootId),
   ])
-
-  if (childrenResult.error) {
-    throw childrenResult.error
-  }
-
-  if (partnerResult.error) {
-    throw partnerResult.error
-  }
-
-  const children = childrenResult.data ?? []
-  const timelineIds = [root.id, ...children.map((timeline) => timeline.id)]
-  const { data: eventRows, error: eventError } = await supabase
-    .from('timeline_events')
-    .select('couple_id, event_date')
-    .in('couple_id', timelineIds)
-
-  if (eventError) {
-    throw eventError
-  }
-
+  if (!root || !access.exists()) throw new Error('Relacionamento não encontrado ou sem permissão de leitura.')
+  const role = access.data().role as CoupleRole
+  children.sort((a, b) => a.created_at.localeCompare(b.created_at))
+  const eventRows = await listEvents([rootId, ...children.map((item) => item.id)])
   const summaries = new Map<string, Pick<TimelineTreeItem, 'eventCount' | 'lastEventDate'>>()
-
-  for (const event of eventRows ?? []) {
+  for (const event of eventRows) {
     const current = summaries.get(event.couple_id) ?? { eventCount: 0, lastEventDate: null }
-
     summaries.set(event.couple_id, {
       eventCount: current.eventCount + 1,
-      lastEventDate:
-        !current.lastEventDate || event.event_date > current.lastEventDate ? event.event_date : current.lastEventDate,
+      lastEventDate: !current.lastEventDate || event.event_date > current.lastEventDate ? event.event_date : current.lastEventDate,
     })
   }
-
   return {
-    root: {
-      ...root,
-      memberRole: membership.role,
-    },
-    children: children.map((timeline) => ({
-      ...timeline,
-      ...(summaries.get(timeline.id) ?? { eventCount: 0, lastEventDate: null }),
-    })),
-    memberRole: membership.role,
-    hasPartner: Boolean(partnerResult.data),
+    root: { ...root, memberRole: role },
+    children: children.map((item) => ({ ...item, ...(summaries.get(item.id) ?? { eventCount: 0, lastEventDate: null }) })),
+    memberRole: role,
+    hasPartner: members.some((item) => item.role === 'partner'),
   }
 }
 
 export async function getEventTimelineDestinations(coupleId: string) {
   const { couple, canEdit } = await getCouple(coupleId)
-
-  if (!canEdit) {
-    throw new Error('Você não tem permissão para criar eventos nesta timeline.')
-  }
-
+  if (!canEdit) throw new Error('Você não tem permissão para criar eventos nesta timeline.')
   const rootId = couple.parent_id ?? couple.id
-	const { data: root, error: rootError } = await supabase
-		.from('couples')
-		.select('id, name, parent_id, created_at')
-    .eq('id', rootId)
-    .single()
-
-  if (rootError) {
-    throw rootError
-  }
-
-	const { data: children, error: childrenError } = await supabase
-		.from('couples')
-		.select('id, name, parent_id, created_at')
-    .eq('parent_id', rootId)
-    .order('created_at', { ascending: true })
-
-  if (childrenError) {
-    throw childrenError
-  }
-
-	return [root, ...(children ?? [])]
+  const [root, children] = await Promise.all([
+    getRow<Couple>('couples', rootId),
+    listByField<Couple>('couples', 'parent_id', rootId),
+  ])
+  if (!root) throw new Error('Timeline principal não encontrada.')
+  return [root, ...children.sort((a, b) => a.created_at.localeCompare(b.created_at))]
 }
 
 export async function fetchTimelineBackgroundImages(coupleIds: string[]) {
-  const uniqueCoupleIds = Array.from(new Set(coupleIds.filter(Boolean)))
-
-  if (uniqueCoupleIds.length === 0) {
-    return []
-  }
-
-  const { data, error } = await supabase
-    .from('timeline_events')
-    .select('cover_photo_path, timeline_photos(storage_path, position)')
-    .in('couple_id', uniqueCoupleIds)
-    .order('event_date', { ascending: false })
-    .limit(BACKGROUND_EVENT_LIMIT)
-
-  if (error) {
-    throw error
-  }
-
-  const rows = (data ?? []) as unknown as BackgroundEventRow[]
-  const paths = rows.map((event) => {
-    const fallback = (event.timeline_photos ?? [])
-      .slice()
-      .sort((first, second) => (first.position ?? 0) - (second.position ?? 0))[0]?.storage_path
-
-    return event.cover_photo_path ?? fallback ?? null
-  })
+  const events = (await listEvents(coupleIds))
+    .sort((a, b) => b.event_date.localeCompare(a.event_date))
+    .slice(0, BACKGROUND_EVENT_LIMIT)
+  const paths = await Promise.all(events.map(async (event) => event.cover_photo_path ?? (await getPhotos(event.id))[0]?.storage_path ?? null))
   const signedUrls = await createSignedUrlMap(paths.filter((path): path is string => Boolean(path)))
-
   return getBackgroundImagesFromUrls(paths.map((path) => (path ? signedUrls.get(path) : null)))
 }
 
 export async function fetchTimelineTreeBackgroundImages(rootCoupleId: string) {
   const { couple } = await getCouple(rootCoupleId)
   const rootId = couple.parent_id ?? couple.id
-  const { data, error } = await supabase
-    .from('couples')
-    .select('id')
-    .eq('parent_id', rootId)
-    .order('created_at', { ascending: true })
-
-  if (error) {
-    throw error
-  }
-
-  return fetchTimelineBackgroundImages([rootId, ...(data ?? []).map((timeline) => timeline.id)])
+  const children = await listByField<Couple>('couples', 'parent_id', rootId)
+  return fetchTimelineBackgroundImages([rootId, ...children.map((item) => item.id)])
 }
 
 export async function getMembership(coupleId: string): Promise<CoupleMember | null> {
   const user = await getCurrentUser()
-
-  if (!user) {
-    return null
-  }
-
-  const { data: couple, error: coupleError } = await supabase
-    .from('couples')
-    .select('id, parent_id')
-    .eq('id', coupleId)
-    .maybeSingle()
-
-  if (coupleError) {
-    throw coupleError
-  }
-
-  if (!couple) {
-    return null
-  }
-
-  const { data, error } = await supabase
-    .from('couple_members')
-    .select('*')
-    .eq('couple_id', couple.parent_id ?? couple.id)
-    .eq('user_id', user.id)
-    .maybeSingle()
-
-  if (error) {
-    throw error
-  }
-
-  return data
+  if (!user) return null
+  const couple = await getRow<Couple>('couples', coupleId)
+  if (!couple) return null
+  const memberships = await listByField<CoupleMember>('couple_members', 'user_id', user.id)
+  return memberships.find((item) => item.couple_id === (couple.parent_id ?? couple.id)) ?? null
 }
 
 export async function getCouple(coupleId: string) {
-  const [coupleResult, user] = await Promise.all([
-    supabase.from('couples').select('*').eq('id', coupleId).maybeSingle(),
-    getCurrentUser(),
-  ])
-
-  if (coupleResult.error) {
-    throw coupleResult.error
-  }
-
-  if (!coupleResult.data) {
-    throw new Error('Timeline não encontrada ou sem permissão de leitura.')
-  }
-
-  const couple = coupleResult.data
-  const { data: membership, error: membershipError } = user
-    ? await supabase
-        .from('couple_members')
-        .select('*')
-        .eq('couple_id', couple.parent_id ?? couple.id)
-        .eq('user_id', user.id)
-        .maybeSingle()
-    : { data: null, error: null }
-
-  if (membershipError) {
-    throw membershipError
-  }
-
-  const canEdit = membership?.role === 'owner' || membership?.role === 'partner'
-
-  return {
-    couple,
-    isMember: Boolean(membership),
-    canEdit,
-  }
+  const [couple, user] = await Promise.all([getRow<Couple>('couples', coupleId), getCurrentUser()])
+  if (!couple) throw new Error('Timeline não encontrada ou sem permissão de leitura.')
+  const access = user ? await getDoc(doc(firestore, 'access', couple.parent_id ?? couple.id, 'members', user.id)) : null
+  const isMember = Boolean(access?.exists())
+  const role = access?.data()?.role as CoupleRole | undefined
+  return { couple, isMember, canEdit: role === 'owner' || role === 'partner' }
 }
 
-function getMonthRange(year: number, month: number) {
-  const start = `${year}-${String(month).padStart(2, '0')}-01`
-  const nextMonth = month === 12 ? 1 : month + 1
-  const nextYear = month === 12 ? year + 1 : year
-  const end = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`
-
-  return { start, end }
-}
-
-function getCurrentMonthRange() {
-  const today = new Date()
-
-  return getMonthRange(today.getFullYear(), today.getMonth() + 1)
+function compareEvents(a: Pick<TimelineEvent, 'event_date' | 'id'>, b: Pick<TimelineEvent, 'event_date' | 'id'>) {
+  return a.event_date.localeCompare(b.event_date) || a.id.localeCompare(b.id)
 }
 
 export async function fetchTimeline(coupleId: string, options: FetchTimelineOptions = {}): Promise<TimelinePage> {
   const filters = options.filters ?? DEFAULT_TIMELINE_FILTERS
   const pageSize = Math.min(Math.max(options.pageSize ?? DEFAULT_TIMELINE_PAGE_SIZE, 1), MAX_TIMELINE_PAGE_SIZE)
-  const coupleAccess = await getCouple(coupleId)
-  const childTimelinesResult = coupleAccess.couple.parent_id
-    ? { data: [] as Couple[], error: null }
-    : await supabase
-        .from('couples')
-        .select('*')
-        .eq('parent_id', coupleId)
-        .order('created_at', { ascending: true })
-
-  if (childTimelinesResult.error) {
-    throw childTimelinesResult.error
-  }
-
-  const childTimelines = childTimelinesResult.data ?? []
-  const visibleTimelines = [coupleAccess.couple, ...childTimelines]
-  const timelinesById = new Map(visibleTimelines.map((timeline) => [timeline.id, timeline]))
-  const visibleTimelineIds = visibleTimelines.map((timeline) => timeline.id)
-  let eventsQuery = supabase
-    .from('timeline_events')
-    .select(TIMELINE_EVENT_SELECT)
-    .in('couple_id', visibleTimelineIds)
-
-  if (filters.year !== null) {
-    eventsQuery = eventsQuery.eq('year', filters.year)
-  }
-
-  if (filters.month !== null) {
-    if (filters.year !== null) {
-      const { start, end } = getMonthRange(filters.year, filters.month)
-      eventsQuery = eventsQuery.gte('event_date', start).lt('event_date', end)
-    } else {
-      eventsQuery = eventsQuery.like('event_date', `%-${String(filters.month).padStart(2, '0')}-%`)
-    }
-  }
-
-  if (options.cursor) {
-    const cursorOperator = filters.sortOrder === 'asc' ? 'gt' : 'lt'
-    eventsQuery = eventsQuery.or(
-      `event_date.${cursorOperator}.${options.cursor.eventDate},and(event_date.eq.${options.cursor.eventDate},id.${cursorOperator}.${options.cursor.id})`,
-    )
-  }
-
-  const shouldFetchMetadata = !options.cursor
-  const currentMonthRange = getCurrentMonthRange()
-  const [eventsResult, yearsResult, currentMonthResult] = await Promise.all([
-    eventsQuery
-      .order('event_date', { ascending: filters.sortOrder === 'asc' })
-      .order('id', { ascending: filters.sortOrder === 'asc' })
-      .limit(pageSize + 1),
-    shouldFetchMetadata
-      ? supabase.rpc('list_timeline_years', { target_couple_ids: visibleTimelineIds })
-      : Promise.resolve({ data: [] as { year: number }[], error: null }),
-    shouldFetchMetadata
-      ? supabase
-          .from('timeline_events')
-          .select('id', { count: 'exact', head: true })
-          .in('couple_id', visibleTimelineIds)
-          .gte('event_date', currentMonthRange.start)
-          .lt('event_date', currentMonthRange.end)
-      : Promise.resolve({ count: 0, error: null }),
-  ])
-
-  if (eventsResult.error) {
-    throw eventsResult.error
-  }
-
-  if (yearsResult.error) {
-    throw yearsResult.error
-  }
-
-  if (currentMonthResult.error) {
-    throw currentMonthResult.error
-  }
-
-  const rows = (eventsResult.data ?? []) as TimelineEvent[]
+  const access = await getCouple(coupleId)
+  const children = access.couple.parent_id ? [] : await listByField<Couple>('couples', 'parent_id', coupleId)
+  const timelines = [access.couple, ...children]
+  const timelinesById = new Map(timelines.map((item) => [item.id, item]))
+  const allEvents = await listEvents(timelines.map((item) => item.id))
+  const direction = filters.sortOrder === 'asc' ? 1 : -1
+  const cursor = options.cursor ? { event_date: options.cursor.eventDate, id: options.cursor.id } : null
+  const rows = allEvents
+    .filter((event) => filters.year === null || event.year === filters.year)
+    .filter((event) => filters.month === null || Number(event.event_date.slice(5, 7)) === filters.month)
+    .filter((event) => !cursor || compareEvents(event, cursor) * direction > 0)
+    .sort((a, b) => compareEvents(a, b) * direction)
   const pageRows = rows.slice(0, pageSize)
-  const signedUrls = await createSignedUrlMap(
-    pageRows.map((event) => event.cover_photo_path).filter((path): path is string => Boolean(path)),
-  )
-  const events: TimelineEventWithPhotos[] = pageRows.map((event) => {
-    const sourceTimeline = timelinesById.get(event.couple_id) ?? coupleAccess.couple
-
-    return {
-      ...event,
-      photos: [],
-      coverUrl: event.cover_photo_path ? signedUrls.get(event.cover_photo_path) ?? null : null,
-      sourceTimeline: {
-        id: sourceTimeline.id,
-        name: sourceTimeline.name,
-      },
-    }
-  })
-  const lastEvent = events.at(-1)
-  const years = Array.from(new Set((yearsResult.data ?? []).map((event) => event.year))).sort((a, b) => a - b)
-
+  const signedUrls = await createSignedUrlMap(pageRows.map((event) => event.cover_photo_path).filter((path): path is string => Boolean(path)))
+  const events: TimelineEventWithPhotos[] = pageRows.map((event) => ({
+    ...event,
+    photos: [],
+    coverUrl: event.cover_photo_path ? signedUrls.get(event.cover_photo_path) ?? null : null,
+    sourceTimeline: { id: event.couple_id, name: (timelinesById.get(event.couple_id) ?? access.couple).name },
+  }))
+  const today = new Date()
+  const monthPrefix = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-`
+  const last = events.at(-1)
   return {
-    ...coupleAccess,
+    ...access,
     events,
-    years,
-    includesChildren: childTimelines.length > 0,
-    currentMonthEventCount: currentMonthResult.count ?? 0,
-    nextCursor:
-      rows.length > pageSize && lastEvent
-        ? {
-            eventDate: lastEvent.event_date,
-            id: lastEvent.id,
-          }
-        : null,
+    years: options.cursor ? [] : [...new Set(allEvents.map((event) => event.year))].sort((a, b) => a - b),
+    includesChildren: children.length > 0,
+    currentMonthEventCount: options.cursor ? 0 : allEvents.filter((event) => event.event_date.startsWith(monthPrefix)).length,
+    nextCursor: rows.length > pageSize && last ? { eventDate: last.event_date, id: last.id } : null,
   }
 }
 
 export async function fetchTimelineEventPhotos(event: TimelineEventWithPhotos) {
-  const { data, error } = await supabase
-    .from('timeline_events')
-    .select('cover_photo_path, timeline_photos(*)')
-    .eq('id', event.id)
-    .maybeSingle()
-
-  if (error) {
-    throw error
-  }
-
-  if (!data) {
-    throw new Error('Evento não encontrado ou sem permissão de leitura.')
-  }
-
-  const row = data as unknown as TimelinePhotosRow
-  const photos = (row.timeline_photos ?? []).slice().sort((first, second) => (first.position ?? 0) - (second.position ?? 0))
-  const signedUrls = await createSignedUrlMap([
-    row.cover_photo_path,
-    ...photos.map((photo) => photo.storage_path),
-  ].filter((path): path is string => Boolean(path)))
-  const photoItems: TimelinePhotoWithUrl[] = photos.map((photo) => ({
-    ...photo,
-    signedUrl: signedUrls.get(photo.storage_path) ?? null,
-  }))
+  const row = await getRow<TimelineEvent>('timeline_events', event.id)
+  if (!row) throw new Error('Evento não encontrado ou sem permissão de leitura.')
+  const photos = await getPhotos(event.id)
+  const signedUrls = await createSignedUrlMap([row.cover_photo_path, ...photos.map((photo) => photo.storage_path)].filter((path): path is string => Boolean(path)))
+  const photoItems: TimelinePhotoWithUrl[] = photos.map((photo) => ({ ...photo, signedUrl: signedUrls.get(photo.storage_path) ?? null }))
   const fallbackCover = photoItems[0]?.signedUrl ?? null
-
-  return {
-    ...event,
-    photos: photoItems,
-    coverUrl: row.cover_photo_path ? signedUrls.get(row.cover_photo_path) ?? fallbackCover : fallbackCover,
-  }
+  return { ...event, photos: photoItems, coverUrl: row.cover_photo_path ? signedUrls.get(row.cover_photo_path) ?? fallbackCover : fallbackCover }
 }
 
 export async function getTimelineEventComments(eventId: string): Promise<TimelineEventCommentWithAuthor[]> {
   await requireUser()
-
-  const { data, error } = await supabase
-    .from('timeline_event_comments')
-    .select(
-      'id, event_id, couple_id, parent_comment_id, author_id, content, created_at, updated_at, timeline_event_comment_reactions(id, comment_id, user_id, emoji, created_at)',
-    )
-    .eq('event_id', eventId)
-    .order('created_at', { ascending: true })
-
-  if (error) {
-    throw error
-  }
-
-  const rows = (data ?? []) as unknown as EventCommentRow[]
-  const authorIds = Array.from(new Set(rows.map((row) => row.author_id)))
-
-  if (authorIds.length === 0) {
-    return []
-  }
-
-  const { data: profiles, error: profilesError } = await supabase
-    .from('profiles')
-    .select('id, name')
-    .in('id', authorIds)
-
-  if (profilesError) {
-    throw profilesError
-  }
-
-  const namesById = new Map((profiles ?? []).map((profile) => [profile.id, profile.name]))
-
-  return rows.map((row) => ({
-    id: row.id,
-    event_id: row.event_id,
-    couple_id: row.couple_id,
-    parent_comment_id: row.parent_comment_id,
-    author_id: row.author_id,
-    content: row.content,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-    authorName: namesById.get(row.author_id) || 'Pessoa do casal',
-    reactions: row.timeline_event_comment_reactions ?? [],
-  }))
+  const comments = (await listByField<TimelineEventComment>('timeline_event_comments', 'event_id', eventId))
+    .sort((a, b) => a.created_at.localeCompare(b.created_at))
+  const authorIds = [...new Set(comments.map((item) => item.author_id))]
+  const [profiles, reactionGroups] = await Promise.all([
+    Promise.all(authorIds.map((id) => getRow<Profile>('profiles', id))),
+    Promise.all(comments.map((item) => listByField<TimelineEventCommentReaction>('timeline_event_comment_reactions', 'comment_id', item.id))),
+  ])
+  const names = new Map(profiles.filter((profile): profile is Profile => Boolean(profile)).map((profile) => [profile.id, profile.name]))
+  return comments.map((item, index) => ({ ...item, authorName: names.get(item.author_id) || 'Pessoa do casal', reactions: reactionGroups[index] }))
 }
 
 export async function fetchEventForEdit(coupleId: string, eventId: string) {
   const { canEdit } = await getCouple(coupleId)
-
-  if (!canEdit) {
-    throw new Error('Você não tem permissão para editar esta timeline.')
-  }
-
-  const { data, error } = await supabase
-    .from('timeline_events')
-    .select('*, timeline_photos(*)')
-    .eq('id', eventId)
-    .eq('couple_id', coupleId)
-    .maybeSingle()
-
-  if (error) {
-    throw error
-  }
-
-  if (!data) {
-    throw new Error('Evento não encontrado.')
-  }
-
-  const row = data as unknown as EventWithPhotosRow
-  const photos = (row.timeline_photos ?? []).slice().sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+  if (!canEdit) throw new Error('Você não tem permissão para editar esta timeline.')
+  const event = await getRow<TimelineEvent>('timeline_events', eventId)
+  if (!event || event.couple_id !== coupleId) throw new Error('Evento não encontrado.')
+  const photos = await getPhotos(eventId)
   const signedUrls = await createSignedUrlMap(photos.map((photo) => photo.storage_path))
-
-  return {
-    ...row,
-    photos: photos.map((photo) => ({
-      ...photo,
-      signedUrl: signedUrls.get(photo.storage_path) ?? null,
-    })),
-  }
+  return { ...event, photos: photos.map((photo) => ({ ...photo, signedUrl: signedUrls.get(photo.storage_path) ?? null })) }
 }

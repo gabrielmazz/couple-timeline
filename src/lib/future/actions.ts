@@ -1,7 +1,9 @@
 import { z } from 'zod'
-import { supabase } from '../supabase/client'
+import { doc, runTransaction, setDoc } from 'firebase/firestore'
+import { firestore } from '../firebase/client'
 import { requireUser } from '../timeline/queries'
-import type { FutureMomentCategory, FutureMomentStatus } from '../../types/database'
+import { makeTimelineEvent, todayDate } from './firestore-event'
+import type { FutureMoment, FutureMomentCategory, FutureMomentStatus } from '../../types/database'
 
 const futureMomentCategories = [
   'Viagem',
@@ -52,20 +54,9 @@ export async function createFutureMoment(input: FutureMomentInput) {
   const parsed = futureMomentSchema.parse(input)
   const user = await ensureFutureMomentAccess()
 
-  const { data, error } = await supabase
-    .from('future_moments')
-    .insert({
-      couple_id: parsed.coupleId,
-      created_by: user.id,
-      ...getFutureMomentRow(parsed),
-    })
-    .select('*')
-    .single()
-
-  if (error) {
-    throw error
-  }
-
+  const now = new Date().toISOString()
+  const data: FutureMoment = { id: crypto.randomUUID(), couple_id: parsed.coupleId, created_by: user.id, ...getFutureMomentRow(parsed), completed_at: null, completed_event_id: null, created_at: now, updated_at: now }
+  await setDoc(doc(firestore, 'future_moments', data.id), data)
   return data
 }
 
@@ -73,62 +64,38 @@ export async function updateFutureMoment(momentId: string, input: FutureMomentIn
   const parsed = futureMomentSchema.parse(input)
   await ensureFutureMomentAccess()
 
-  const { data: current, error: currentError } = await supabase
-    .from('future_moments')
-    .select('completed_at, completed_event_id')
-    .eq('id', momentId)
-    .eq('couple_id', parsed.coupleId)
-    .single()
-
-  if (currentError) {
-    throw currentError
-  }
-
-  const { data, error } = await supabase
-    .from('future_moments')
-    .update({
-      ...getFutureMomentRow(parsed),
-      completed_at:
-        parsed.status === 'completed' ? current.completed_at ?? new Date().toISOString() : null,
-      completed_event_id: parsed.status === 'completed' ? current.completed_event_id : null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', momentId)
-    .eq('couple_id', parsed.coupleId)
-    .select('*')
-    .single()
-
-  if (error) {
-    throw error
-  }
-
-  return data
+  return runTransaction(firestore, async (tx) => {
+    const ref = doc(firestore, 'future_moments', momentId)
+    const current = (await tx.get(ref)).data() as FutureMoment | undefined
+    if (!current || current.couple_id !== parsed.coupleId) throw new Error('Momento futuro não encontrado.')
+    const data = { ...current, ...getFutureMomentRow(parsed), completed_at: parsed.status === 'completed' ? current.completed_at ?? new Date().toISOString() : null, completed_event_id: parsed.status === 'completed' ? current.completed_event_id : null, updated_at: new Date().toISOString() }
+    tx.set(ref, data)
+    return data
+  })
 }
 
 export async function deleteFutureMoment(momentId: string, coupleId: string) {
   await ensureFutureMomentAccess()
 
-  const { error } = await supabase
-    .from('future_moments')
-    .delete()
-    .eq('id', momentId)
-    .eq('couple_id', coupleId)
-
-  if (error) {
-    throw error
-  }
+  await runTransaction(firestore, async (tx) => {
+    const ref = doc(firestore, 'future_moments', momentId)
+    const current = (await tx.get(ref)).data() as FutureMoment | undefined
+    if (!current || current.couple_id !== coupleId) throw new Error('Momento futuro não encontrado.')
+    tx.delete(ref)
+  })
 }
 
 export async function completeFutureMoment(momentId: string) {
-  await requireUser()
-
-  const { data, error } = await supabase.rpc('complete_future_moment', {
-    target_moment_id: momentId,
+  const user = await requireUser()
+  return runTransaction(firestore, async (tx) => {
+    const ref = doc(firestore, 'future_moments', momentId)
+    const current = (await tx.get(ref)).data() as FutureMoment | undefined
+    if (!current) throw new Error('Momento futuro não encontrado.')
+    if (current.completed_event_id) return current.completed_event_id
+    const id = crypto.randomUUID()
+    const event = makeTimelineEvent({ id, coupleId: current.couple_id, userId: user.id, date: current.target_date ?? todayDate(), title: current.title, description: current.description, location: current.location_name, category: current.category === 'Viagem' ? 'Viagem' : 'Outro' })
+    tx.set(doc(firestore, 'timeline_events', id), event)
+    tx.update(ref, { status: 'completed', completed_at: new Date().toISOString(), completed_event_id: id, updated_at: new Date().toISOString() })
+    return id
   })
-
-  if (error) {
-    throw error
-  }
-
-  return data
 }

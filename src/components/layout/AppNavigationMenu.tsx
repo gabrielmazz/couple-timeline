@@ -3,7 +3,8 @@ import { Heart } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/auth-context'
-import { supabase } from '../../lib/supabase/client'
+import { signOut } from 'firebase/auth'
+import { firebaseAuth } from '../../lib/firebase/client'
 import { getUserTimelineTree } from '../../lib/timeline/queries'
 import type { TimelineTree } from '../../types/timeline'
 import StaggeredMenu, { type StaggeredMenuItem } from '../ui/StaggeredMenu'
@@ -51,13 +52,13 @@ export function AppNavigationMenu() {
 	}, [user])
 
 	const handleLogout = useCallback(async () => {
-		const { error } = await supabase.auth.signOut()
-
-		if (error) {
+		try {
+			await signOut(firebaseAuth)
+		} catch (error) {
 			notifications.show({
 				color: 'red',
 				title: 'Não foi possível sair',
-				message: error.message,
+				message: error instanceof Error ? error.message : 'Tente novamente.',
 			})
 			return
 		}
@@ -100,6 +101,7 @@ export function AppNavigationMenu() {
 			createMenuItem('Timeline', 'Ir para a timeline principal', timelinePath),
 			createMenuItem('Presentes', 'Ir para a lista de presentes', '/presentes'),
 			createMenuItem('Calendário', 'Ir para o calendário do casal', '/calendario'),
+			createMenuItem('Planos do mês', 'Ir para os planos do mês', '/planos-do-mes'),
 			createMenuItem('Futuro', 'Ir para os planos do casal', '/futuro'),
 			createMenuItem('Mini games', 'Abrir os mini games do casal', '/jogos'),
 			createMenuItem('Perfil', 'Ir para o perfil', '/perfil'),

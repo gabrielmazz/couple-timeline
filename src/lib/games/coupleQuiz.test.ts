@@ -4,6 +4,7 @@ import {
 	createQuizSession,
 	createTimelineQuizQuestions,
 	filterQuizQuestions,
+	getQuizPlayers,
 	getVisibleQuizAnswers,
 	getQuizPlayerAccuracy,
 	getQuizScorePercentage,
@@ -110,6 +111,11 @@ describe('couple quiz deck', () => {
 })
 
 describe('couple quiz session', () => {
+	it('mantém a ordem do casal quando a partida é aberta por qualquer pessoa', () => {
+		expect(getQuizPlayers('Gabriel', 'Ela', 'owner')).toEqual(['Gabriel', 'Ela'])
+		expect(getQuizPlayers('Ela', 'Gabriel', 'partner')).toEqual(['Gabriel', 'Ela'])
+	})
+
 	it('mantém a primeira resposta escondida durante a troca', () => {
 		let session = startSession()
 		session = quizReducer(session, { type: 'select-answer', optionId: 'a' }) as QuizSession
@@ -138,6 +144,16 @@ describe('couple quiz session', () => {
 		expect(reveal.matches).toBe(0)
 		expect(reveal.stats).toEqual([{ guesses: 0, correct: 0 }, { guesses: 1, correct: 0 }])
 		expect(getQuizScorePercentage(reveal)).toBe(0)
+	})
+
+	it('associa resposta e palpite ao nome correto quando o turno alterna', () => {
+		const firstReveal = answerCurrentQuestion(startSession(), 'a', 'b')
+		const secondStart = quizReducer(firstReveal, { type: 'next-question' }) as QuizSession
+		const secondReveal = answerCurrentQuestion(secondStart, 'c', 'd')
+
+		expect(secondReveal.firstPlayerIndex).toBe(1)
+		expect(secondReveal.answers).toEqual(['d', 'c'])
+		expect(getVisibleQuizAnswers(secondReveal)).toEqual(['d', 'c'])
 	})
 
 	it('alterna quem começa e encerra partidas de 5, 8 e 12 perguntas', () => {

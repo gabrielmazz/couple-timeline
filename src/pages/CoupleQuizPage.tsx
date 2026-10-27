@@ -38,6 +38,7 @@ import {
 	createTimelineQuizQuestions,
 	filterQuizQuestions,
 	getCurrentQuizQuestion,
+	getQuizPlayers,
 	getQuizScoreMessage,
 	getQuizScorePercentage,
 	getVisibleQuizAnswers,
@@ -100,13 +101,9 @@ function getPlayersFromProfileData(profileData: Awaited<ReturnType<typeof getPro
 		throw new Error('Crie ou abra uma timeline principal antes de iniciar o jogo.')
 	}
 
-	const firstPlayer = profileData.profile.name?.trim() || 'Pessoa 1'
-	const partnerName = profileData.partner?.name?.trim()
-	const secondPlayer = partnerName || 'Pessoa 2'
-
 	return {
 		coupleName: profileData.tree.root.name.trim(),
-		players: [firstPlayer, secondPlayer],
+		players: getQuizPlayers(profileData.profile.name, profileData.partner?.name, profileData.tree.memberRole),
 		timelineQuestions: [],
 	}
 }
@@ -510,7 +507,9 @@ export function CoupleQuizPage() {
 					<div className="quiz-reveal-grid">
 						{session.players.map((player, index) => (
 							<div key={`${player}-${index}`} className="quiz-answer-panel" data-match={isMatch}>
-								<Text className="quiz-answer-player" size="xs" tt="uppercase" fw={800}>{player}</Text>
+								<Text className="quiz-answer-player" size="xs" tt="uppercase" fw={800}>
+									{index === session.firstPlayerIndex ? 'Resposta' : 'Palpite'} · {player}
+								</Text>
 								<Text className="quiz-answer-label">{getOptionLabel(currentQuestion, answers[index as 0 | 1])}</Text>
 							</div>
 						))}
@@ -582,7 +581,7 @@ export function CoupleQuizPage() {
 										<Button component={Link} to="/perfil" variant="light" color="pink">Abrir perfil</Button>
 									</Group>
 								</Stack>
-					</Card>
+							</Card>
 				</Stack>
 			</Container>
 		)

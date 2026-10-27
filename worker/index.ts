@@ -1,3 +1,6 @@
+import { z } from 'zod'
+import { canEditCouple, canReadCouple } from './firebase'
+
 type ParsedImagePath = {
   path: string
   coupleId: string
@@ -14,8 +17,461 @@ const defaultAllowedOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173',
 const maxImageSize = 5 * 1024 * 1024
 const maxPathsPerRequest = 200
 const defaultReadUrlTtlSeconds = 60 * 60
-const maxSupabaseRpcAttempts = 3
-const retryableSupabaseStatuses = new Set([502, 503, 504, 520, 521, 522, 523, 524])
+const suggestionsCacheTtlSeconds = 6 * 60 * 60
+const geocodeCacheTtlSeconds = 24 * 60 * 60
+const maxSuggestionResults = 24
+const nominatimUserAgent = 'couple-timeline/1.0 (https://github.com/gabrielmazz/couple-timeline)'
+let lastNominatimRequestAt = 0
+const suggestionCategories = [
+  'Restaurante',
+  'Café',
+  'Parque',
+  'Museu',
+  'Cinema',
+  'Teatro',
+  'Bar',
+  'Praia',
+  'Trilha',
+  'Centro cultural',
+  'Atividade',
+  'Outro',
+] as const
+type SuggestionCategory = (typeof suggestionCategories)[number]
+
+const suggestionCategoryTags: Record<SuggestionCategory, string[]> = {
+  Restaurante: ['amenity=restaurant'],
+  Café: ['amenity=cafe'],
+  Parque: ['leisure=park'],
+  Museu: ['tourism=museum'],
+  Cinema: ['amenity=cinema'],
+  Teatro: ['amenity=theatre'],
+  Bar: ['amenity=bar'],
+  Praia: ['natural=beach'],
+  Trilha: ['route=hiking'],
+  'Centro cultural': ['amenity=arts_centre', 'amenity=community_centre'],
+  Atividade: ['leisure=fitness_centre', 'leisure=sports_centre', 'leisure=swimming_pool'],
+  Outro: ['amenity=community_centre', 'tourism=attraction'],
+}
+
+const suggestionsQuerySchema = z.object({
+  coupleId: z.string().uuid('Casal inválido.'),
+  city: z.string().trim().min(2).max(160).optional(),
+  latitude: z.coerce.number().finite().min(-90).max(90).optional(),
+  longitude: z.coerce.number().finite().min(-180).max(180).optional(),
+  radiusKm: z.coerce.number().finite().min(1).max(15).default(5),
+  categories: z.string().trim().optional(),
+})
+
+const geocodeQuerySchema = z.object({
+  coupleId: z.string().uuid('Casal inválido.'),
+  query: z.string().trim().min(2).max(160),
+  limit: z.coerce.number().int().min(1).max(5).default(5),
+})
+
+export type SuggestionLocation = {
+  label: string
+  city: string | null
+  latitude: number
+  longitude: number
+}
+
+export type OSMElement = {
+  type?: string
+  id?: number
+  lat?: number
+  lon?: number
+  center?: { lat?: number; lon?: number }
+  tags?: Record<string, string | undefined>
+}
+
+type NominatimResult = {
+  place_id?: number
+  osm_type?: string
+  osm_id?: number
+  display_name?: string
+  lat?: string
+  lon?: string
+  address?: {
+    city?: string
+    town?: string
+    municipality?: string
+    village?: string
+    state?: string
+    country?: string
+  }
+}
+
+function roundCoordinate(value: number) {
+  return value.toFixed(3)
+}
+
+function normalizeSuggestionCategories(input: string | undefined): SuggestionCategory[] | null {
+  const requested = (input ?? '')
+    .split(',')
+    .map((category) => category.trim())
+    .filter(Boolean)
+
+  const invalidCategory = requested.find((category) => !suggestionCategories.includes(category as SuggestionCategory))
+
+  if (invalidCategory) return null
+
+  const categories = Array.from(new Set(requested)) as SuggestionCategory[]
+
+  return categories.length > 0 ? categories : [...suggestionCategories]
+}
+
+function haversineDistanceKm(latitudeA: number, longitudeA: number, latitudeB: number, longitudeB: number) {
+  const earthRadiusKm = 6371
+  const latitudeDelta = ((latitudeB - latitudeA) * Math.PI) / 180
+  const longitudeDelta = ((longitudeB - longitudeA) * Math.PI) / 180
+  const a =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos((latitudeA * Math.PI) / 180) *
+      Math.cos((latitudeB * Math.PI) / 180) *
+      Math.sin(longitudeDelta / 2) ** 2
+
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+export function googleMapsUrl(latitude: number, longitude: number) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${latitude},${longitude}`)}`
+}
+
+function createSuggestionsCacheKey(request: Request, location: SuggestionLocation, radiusKm: number, categories: SuggestionCategory[]) {
+  const url = new URL(request.url)
+  const categoryKey = [...categories].sort().join(',')
+
+  return new Request(
+    `${url.origin}/api/plans/suggestions?lat=${roundCoordinate(location.latitude)}&lng=${roundCoordinate(location.longitude)}&radius=${radiusKm}&categories=${encodeURIComponent(categoryKey)}`,
+  )
+}
+
+async function fetchExternalJson<T>(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 9000) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const response = await fetch(input, { ...init, signal: controller.signal })
+
+    if (!response.ok) {
+      throw new Error(`Fonte externa respondeu com ${response.status}.`)
+    }
+
+    return await response.json<T>()
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function waitForNominatimSlot() {
+  const waitMs = Math.max(0, 1000 - (Date.now() - lastNominatimRequestAt))
+
+  if (waitMs > 0) {
+    await new Promise((resolve) => setTimeout(resolve, waitMs))
+  }
+
+  lastNominatimRequestAt = Date.now()
+}
+
+async function resolveSuggestionLocation(city: string): Promise<SuggestionLocation | null> {
+  await waitForNominatimSlot()
+  const url = new URL('https://nominatim.openstreetmap.org/search')
+  url.searchParams.set('q', city)
+  url.searchParams.set('format', 'jsonv2')
+  url.searchParams.set('limit', '1')
+  url.searchParams.set('addressdetails', '1')
+  const results = await fetchExternalJson<NominatimResult[]>(
+    url,
+    { headers: { Accept: 'application/json', 'User-Agent': nominatimUserAgent } },
+    10000,
+  )
+  const result = results[0]
+  const latitude = Number(result?.lat)
+  const longitude = Number(result?.lon)
+
+  if (!result || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return null
+  }
+
+  return {
+    label: result.display_name?.split(',').slice(0, 2).join(',').trim() || city,
+    city: result.address?.city || result.address?.town || result.address?.municipality || result.address?.village || city,
+    latitude,
+    longitude,
+  }
+}
+
+function createGeocodeCacheKey(request: Request, query: string, limit: number) {
+  const requestUrl = new URL(request.url)
+  const normalizedQuery = query.trim().toLocaleLowerCase('pt-BR')
+
+  return new Request(
+    `${requestUrl.origin}/api/plans/geocode?q=${encodeURIComponent(normalizedQuery)}&limit=${limit}`,
+  )
+}
+
+export function normalizeCitySuggestions(results: NominatimResult[]) {
+  return results
+    .map((result) => {
+      const latitude = Number(result.lat)
+      const longitude = Number(result.lon)
+      const city = result.address?.city || result.address?.town || result.address?.municipality || result.address?.village
+      const label = [city, result.address?.state, result.address?.country]
+        .filter(Boolean)
+        .join(', ') || result.display_name?.trim() || null
+      const id = result.osm_type && result.osm_id !== undefined
+        ? `${result.osm_type}/${result.osm_id}`
+        : result.place_id !== undefined
+          ? `place/${result.place_id}`
+          : null
+
+      if (!id || !label || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return null
+      }
+
+      return { id, label, city: city || label, latitude, longitude }
+    })
+    .filter((result): result is NonNullable<typeof result> => Boolean(result))
+}
+
+async function handlePlanGeocode(request: Request, env: Env) {
+  const userJwt = getBearerToken(request)
+
+  if (!userJwt) {
+    return errorResponse(request, env, 'Você precisa estar autenticado para buscar cidades.', 401)
+  }
+
+  const url = new URL(request.url)
+  const parsed = geocodeQuerySchema.safeParse({
+    coupleId: url.searchParams.get('coupleId') ?? undefined,
+    query: url.searchParams.get('q') ?? undefined,
+    limit: url.searchParams.get('limit') ?? undefined,
+  })
+
+  if (!parsed.success) {
+    return errorResponse(request, env, 'Informe pelo menos 2 caracteres para buscar uma cidade.', 400)
+  }
+
+  if (!(await canEditCouple(env, parsed.data.coupleId, userJwt))) {
+    return errorResponse(request, env, 'Você não tem permissão para buscar cidades deste casal.', 403)
+  }
+
+  const cacheKey = createGeocodeCacheKey(request, parsed.data.query, parsed.data.limit)
+  const cachedResponse = await caches.default.match(cacheKey)
+
+  if (cachedResponse) {
+    return jsonResponse(request, env, await cachedResponse.clone().json(), {
+      headers: { 'Cache-Control': `public, max-age=${geocodeCacheTtlSeconds}` },
+    })
+  }
+
+  const nominatimUrl = new URL('https://nominatim.openstreetmap.org/search')
+  nominatimUrl.searchParams.set('q', parsed.data.query)
+  nominatimUrl.searchParams.set('format', 'jsonv2')
+  nominatimUrl.searchParams.set('limit', String(parsed.data.limit))
+  nominatimUrl.searchParams.set('addressdetails', '1')
+  nominatimUrl.searchParams.set('accept-language', 'pt-BR')
+
+  try {
+    await waitForNominatimSlot()
+    const results = await fetchExternalJson<NominatimResult[]>(
+      nominatimUrl,
+      { headers: { Accept: 'application/json', 'User-Agent': nominatimUserAgent } },
+      10000,
+    )
+    const response = jsonResponse(request, env, { suggestions: normalizeCitySuggestions(results) }, {
+      headers: { 'Cache-Control': `public, max-age=${geocodeCacheTtlSeconds}` },
+    })
+
+    await caches.default.put(cacheKey, response.clone()).catch(() => undefined)
+    return response
+  } catch {
+    return errorResponse(request, env, 'Não foi possível buscar cidades agora.', 502)
+  }
+}
+
+function buildOverpassQuery(location: SuggestionLocation, radiusKm: number, categories: SuggestionCategory[]) {
+  const radiusMeters = Math.round(radiusKm * 1000)
+  const filters = Array.from(new Set(categories.flatMap((category) => suggestionCategoryTags[category])))
+    .map((tag) => {
+      const [key, value] = tag.split('=')
+      return `nwr(around:${radiusMeters},${location.latitude},${location.longitude})[${key}=${value}];`
+    })
+    .join('\n')
+
+  return `[out:json][timeout:8];(${filters});out center tags;`
+}
+
+function suggestionCategoryFromTags(tags: Record<string, string | undefined> = {}): SuggestionCategory {
+  if (tags.amenity === 'restaurant') return 'Restaurante'
+  if (tags.amenity === 'cafe') return 'Café'
+  if (tags.leisure === 'park') return 'Parque'
+  if (tags.tourism === 'museum') return 'Museu'
+  if (tags.amenity === 'cinema') return 'Cinema'
+  if (tags.amenity === 'theatre') return 'Teatro'
+  if (tags.amenity === 'bar') return 'Bar'
+  if (tags.natural === 'beach') return 'Praia'
+  if (tags.route === 'hiking') return 'Trilha'
+  if (tags.amenity === 'arts_centre' || tags.amenity === 'community_centre') return 'Centro cultural'
+  if (['fitness_centre', 'sports_centre', 'swimming_pool'].includes(tags.leisure ?? '')) return 'Atividade'
+  return 'Outro'
+}
+
+function formatOsmAddress(tags: Record<string, string | undefined>) {
+  return [tags['addr:street'], tags['addr:housenumber'], tags['addr:suburb'], tags['addr:city']]
+    .filter(Boolean)
+    .join(', ')
+}
+
+export function normalizeOSMPlaces(elements: OSMElement[], location: SuggestionLocation, categories: SuggestionCategory[]) {
+  const seen = new Set<string>()
+
+  return elements
+    .map((element) => {
+      const latitude = Number(element.lat ?? element.center?.lat)
+      const longitude = Number(element.lon ?? element.center?.lon)
+      const name = element.tags?.name?.trim()
+      const id = element.type && element.id !== undefined ? `${element.type}/${element.id}` : null
+
+      if (!name || !id || !Number.isFinite(latitude) || !Number.isFinite(longitude) || seen.has(id)) {
+        return null
+      }
+
+      seen.add(id)
+      const category = suggestionCategoryFromTags(element.tags)
+
+      if (!categories.includes(category) && !categories.includes('Outro')) {
+        return null
+      }
+
+      return {
+        id,
+        name,
+        category,
+        latitude,
+        longitude,
+        address: formatOsmAddress(element.tags ?? {}) || null,
+        distanceKm: Number(haversineDistanceKm(location.latitude, location.longitude, latitude, longitude).toFixed(1)),
+        googleMapsUrl: googleMapsUrl(latitude, longitude),
+        sourceUrl: `https://www.openstreetmap.org/${id}`,
+      }
+    })
+    .filter((place): place is NonNullable<typeof place> => Boolean(place))
+    .sort((a, b) => a.distanceKm - b.distanceKm)
+    .slice(0, maxSuggestionResults)
+}
+
+async function fetchOpenStreetMapPlaces(location: SuggestionLocation, radiusKm: number, categories: SuggestionCategory[]) {
+  const response = await fetchExternalJson<{ elements?: OSMElement[] }>('https://overpass-api.de/api/interpreter', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+    body: new URLSearchParams({ data: buildOverpassQuery(location, radiusKm, categories) }),
+  }, 12000)
+
+  return normalizeOSMPlaces(response.elements ?? [], location, categories)
+}
+
+async function fetchSuggestionWeather(location: SuggestionLocation) {
+  const url = new URL('https://api.open-meteo.com/v1/forecast')
+  url.searchParams.set('latitude', String(location.latitude))
+  url.searchParams.set('longitude', String(location.longitude))
+  url.searchParams.set('current', 'temperature_2m,precipitation,weather_code')
+  url.searchParams.set('daily', 'precipitation_probability_max')
+  url.searchParams.set('forecast_days', '1')
+  url.searchParams.set('timezone', 'auto')
+  const response = await fetchExternalJson<{ current?: { temperature_2m?: number; precipitation?: number; weather_code?: number }; daily?: { precipitation_probability_max?: number[] } }>(url)
+
+  return {
+    temperature: typeof response.current?.temperature_2m === 'number' ? response.current.temperature_2m : null,
+    precipitation: typeof response.current?.precipitation === 'number' ? response.current.precipitation : null,
+    precipitationProbability: typeof response.daily?.precipitation_probability_max?.[0] === 'number' ? response.daily.precipitation_probability_max[0] : null,
+    weatherCode: typeof response.current?.weather_code === 'number' ? response.current.weather_code : null,
+  }
+}
+
+async function handlePlanSuggestions(request: Request, env: Env) {
+  const userJwt = getBearerToken(request)
+
+  if (!userJwt) {
+    return errorResponse(request, env, 'Você precisa estar autenticado para buscar sugestões.', 401)
+  }
+
+  const url = new URL(request.url)
+  const parsed = suggestionsQuerySchema.safeParse({
+    coupleId: url.searchParams.get('coupleId') ?? undefined,
+    city: url.searchParams.get('city') ?? undefined,
+    latitude: url.searchParams.get('latitude') ?? undefined,
+    longitude: url.searchParams.get('longitude') ?? undefined,
+    radiusKm: url.searchParams.get('radiusKm') ?? undefined,
+    categories: url.searchParams.get('categories') ?? undefined,
+  })
+
+  if (!parsed.success) {
+    return errorResponse(request, env, 'Parâmetros inválidos para buscar sugestões.', 400)
+  }
+
+  const { coupleId, city, latitude, longitude, radiusKm } = parsed.data
+
+  if ((latitude === undefined) !== (longitude === undefined) || (!city && latitude === undefined)) {
+    return errorResponse(request, env, 'Informe uma cidade ou latitude e longitude.', 400)
+  }
+
+  if (!(await canEditCouple(env, coupleId, userJwt))) {
+    return errorResponse(request, env, 'Você não tem permissão para buscar sugestões deste casal.', 403)
+  }
+
+  let location: SuggestionLocation | null
+
+  try {
+    location = latitude !== undefined && longitude !== undefined
+      ? { label: city || 'Localização atual', city: city || null, latitude, longitude }
+      : await resolveSuggestionLocation(city!)
+  } catch {
+    return errorResponse(request, env, 'Não foi possível localizar essa cidade agora. Tente novamente ou informe outra cidade.', 502)
+  }
+
+  if (!location) {
+    return errorResponse(request, env, 'Não encontramos essa cidade. Tente informar cidade e estado.', 404)
+  }
+
+  const categories = normalizeSuggestionCategories(parsed.data.categories)
+  if (!categories) {
+    return errorResponse(request, env, 'Uma ou mais categorias de sugestão são inválidas.', 400)
+  }
+  const cacheKey = createSuggestionsCacheKey(request, location, radiusKm, categories)
+  const cachedResponse = await caches.default.match(cacheKey)
+
+  if (cachedResponse) {
+    return jsonResponse(request, env, await cachedResponse.clone().json(), {
+      headers: { 'Cache-Control': `public, max-age=${suggestionsCacheTtlSeconds}` },
+    })
+  }
+
+  const [placesResult, weatherResult] = await Promise.allSettled([
+    fetchOpenStreetMapPlaces(location, radiusKm, categories),
+    fetchSuggestionWeather(location),
+  ])
+  const warnings: string[] = []
+  const places = placesResult.status === 'fulfilled' ? placesResult.value : []
+  const weather = weatherResult.status === 'fulfilled' ? weatherResult.value : null
+
+  if (placesResult.status === 'rejected') warnings.push('Não foi possível carregar os lugares próximos agora.')
+  if (weatherResult.status === 'rejected') warnings.push('Não foi possível carregar o clima agora.')
+
+  const response = jsonResponse(request, env, {
+    location,
+    weather,
+    places,
+    warnings,
+  }, {
+    headers: {
+      'Cache-Control': `public, max-age=${suggestionsCacheTtlSeconds}`,
+    },
+  })
+
+  await caches.default.put(cacheKey, response.clone()).catch(() => undefined)
+  return response
+}
 
 function parseImagePath(input: unknown): ParsedImagePath | null {
   if (typeof input !== 'string') {
@@ -231,60 +687,6 @@ async function createSignedImageUrl(request: Request, env: Env, path: string) {
   return `${url.origin}/images/${encodeObjectPath(path)}?expires=${expiresAt}&sig=${signature}`
 }
 
-async function callSupabaseRpc<T>(
-  env: Env,
-  functionName: string,
-  body: Record<string, unknown>,
-  userJwt: string | null,
-) {
-  const headers = new Headers({
-    apikey: env.SUPABASE_PUBLISHABLE_KEY,
-    Authorization: `Bearer ${userJwt ?? env.SUPABASE_PUBLISHABLE_KEY}`,
-    'Content-Type': 'application/json',
-  })
-
-  for (let attempt = 1; attempt <= maxSupabaseRpcAttempts; attempt += 1) {
-    let response: Response
-
-    try {
-      response = await fetch(`${env.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/rpc/${functionName}`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-      })
-    } catch (error) {
-      if (attempt === maxSupabaseRpcAttempts) {
-        throw error
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, attempt * 100))
-      continue
-    }
-
-    if (response.ok) {
-      return response.json<T>()
-    }
-
-    const message = await response.text()
-
-    if (!retryableSupabaseStatuses.has(response.status) || attempt === maxSupabaseRpcAttempts) {
-      throw new Error(message || `Supabase RPC ${functionName} falhou.`)
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, attempt * 100))
-  }
-
-  throw new Error(`Supabase RPC ${functionName} falhou.`)
-}
-
-async function canReadCouple(env: Env, coupleId: string, userJwt: string | null) {
-  return callSupabaseRpc<boolean>(env, 'can_read_couple', { target_couple_id: coupleId }, userJwt)
-}
-
-async function canEditCouple(env: Env, coupleId: string, userJwt: string) {
-  return callSupabaseRpc<boolean>(env, 'can_edit_couple', { target_couple_id: coupleId }, userJwt)
-}
-
 async function buildCouplePermissionMap(
   env: Env,
   paths: ParsedImagePath[],
@@ -431,6 +833,32 @@ async function handleDelete(request: Request, env: Env, executionContext: Execut
   }
 }
 
+async function handleCopy(request: Request, env: Env) {
+  const token = getBearerToken(request)
+  if (!token) return errorResponse(request, env, 'Você precisa estar autenticado para copiar imagens.', 401)
+  let body: { paths?: unknown; targetCoupleId?: unknown }
+  try { body = await request.json() } catch { return errorResponse(request, env, 'Envie um JSON válido.', 400) }
+  const paths = normalizePathList(body.paths)
+  const target = typeof body.targetCoupleId === 'string' ? body.targetCoupleId : ''
+  if (!paths.length || !new RegExp(`^${uuidPattern}$`).test(target) || paths.some((item) => item.eventId !== paths[0].eventId)) {
+    return errorResponse(request, env, 'Destino ou imagens inválidos.', 400)
+  }
+  const permissions = await buildCouplePermissionMap(env, paths, token, 'edit')
+  if (!(await canEditCouple(env, target, token)) || paths.some((item) => !permissions.get(item.coupleId))) {
+    return errorResponse(request, env, 'Você não tem permissão para copiar essas imagens.', 403)
+  }
+  const copied: Record<string, string> = {}
+  for (const item of paths) {
+    const object = await env.TIMELINE_IMAGES.get(item.path)
+    if (!object) return errorResponse(request, env, 'Uma das imagens não foi encontrada.', 404)
+    const name = item.path.slice(item.path.lastIndexOf('/') + 1)
+    const destination = `couples/${target}/events/${item.eventId}/${crypto.randomUUID()}-${name}`
+    await env.TIMELINE_IMAGES.put(destination, object.body, { httpMetadata: object.httpMetadata, customMetadata: object.customMetadata })
+    copied[item.path] = destination
+  }
+  return jsonResponse(request, env, { paths: copied })
+}
+
 function createBrowserImageHeaders(request: Request, env: Env, objectHeaders: Headers) {
   const headers = new Headers(objectHeaders)
 
@@ -498,6 +926,14 @@ async function routeRequest(request: Request, env: Env, executionContext: Execut
     return new Response(null, { status: 204, headers: corsHeaders(request, env) })
   }
 
+  if (request.method === 'GET' && url.pathname === '/api/plans/geocode') {
+    return handlePlanGeocode(request, env)
+  }
+
+  if (request.method === 'GET' && url.pathname === '/api/plans/suggestions') {
+    return handlePlanSuggestions(request, env)
+  }
+
   if (request.method === 'POST' && url.pathname === '/api/images/sign-read') {
     return handleSignRead(request, env)
   }
@@ -508,6 +944,10 @@ async function routeRequest(request: Request, env: Env, executionContext: Execut
 
   if (request.method === 'POST' && url.pathname === '/api/images/delete') {
     return handleDelete(request, env, executionContext)
+  }
+
+  if (request.method === 'POST' && url.pathname === '/api/images/copy') {
+    return handleCopy(request, env)
   }
 
   if (request.method === 'GET' && url.pathname.startsWith('/images/')) {

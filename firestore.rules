@@ -1,0 +1,208 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function couple(id) { return get(/databases/$(database)/documents/couples/$(id)).data; }
+    function rootId(id) { return couple(id).parent_id == null ? id : couple(id).parent_id; }
+    function membership(root, uid) { return get(/databases/$(database)/documents/access/$(root)/members/$(uid)).data; }
+    function memberRoot(root) {
+      return signedIn() && exists(/databases/$(database)/documents/access/$(root)/members/$(request.auth.uid))
+        && membership(root, request.auth.uid).role in ['owner', 'partner'];
+    }
+    function member(id) { return memberRoot(rootId(id)); }
+    function owner(root) { return memberRoot(root) && membership(root, request.auth.uid).role == 'owner'; }
+    function canRead(id) { return couple(rootId(id)).visibility == 'public' || member(id); }
+    function ownRootPath() { return /databases/$(database)/documents/user_roots/$(request.auth.uid); }
+    function partnerProfile(uid) {
+      return signedIn() && exists(ownRootPath())
+        && memberRoot(get(ownRootPath()).data.root_id)
+        && exists(/databases/$(database)/documents/access/$(get(ownRootPath()).data.root_id)/members/$(uid));
+    }
+    function smallString(value, max) { return value is string && value.size() <= max; }
+    function optionalText(value, max) { return value == null || smallString(value, max); }
+    function unchanged(keys) { return !request.resource.data.diff(resource.data).affectedKeys().hasAny(keys); }
+    function base(data, id) {
+      return data.id == id && smallString(data.couple_id, 100)
+        && smallString(data.created_at, 40) && smallString(data.updated_at, 40);
+    }
+    function title(data) { return smallString(data.title, 120) && data.title.size() >= 2; }
+    function ownerBootstrap(root, uid, memberId) {
+      let c = getAfter(/databases/$(database)/documents/couples/$(root)).data;
+      let a = getAfter(/databases/$(database)/documents/access/$(root)/members/$(uid)).data;
+      let u = getAfter(/databases/$(database)/documents/user_roots/$(uid)).data;
+      let m = getAfter(/databases/$(database)/documents/couple_members/$(memberId)).data;
+      return signedIn() && uid == request.auth.uid
+        && !exists(/databases/$(database)/documents/user_roots/$(uid))
+        && !exists(/databases/$(database)/documents/couples/$(root))
+        && c.id == root && c.parent_id == null && c.created_by == uid
+        && a.couple_id == root && a.user_id == uid && a.role == 'owner' && a.membership_id == memberId
+        && u.root_id == root && u.membership_id == memberId
+        && m.id == memberId && m.couple_id == root && m.user_id == uid && m.role == 'owner';
+    }
+    function acceptedInvite(root, uid, inviteId, memberId) {
+      let before = get(/databases/$(database)/documents/invites/$(inviteId)).data;
+      let after = getAfter(/databases/$(database)/documents/invites/$(inviteId)).data;
+      let slot = getAfter(/databases/$(database)/documents/access/$(root)/slots/partner).data;
+      let acl = getAfter(/databases/$(database)/documents/access/$(root)/members/$(uid)).data;
+      let userRoot = getAfter(/databases/$(database)/documents/user_roots/$(uid)).data;
+      let m = getAfter(/databases/$(database)/documents/couple_members/$(memberId)).data;
+      return signedIn() && uid == request.auth.uid && request.auth.token.email_verified == true
+        && !exists(/databases/$(database)/documents/user_roots/$(uid))
+        && !exists(/databases/$(database)/documents/access/$(root)/slots/partner)
+        && before.id == inviteId && before.couple_id == root && before.status == 'pending'
+        && before.email == request.auth.token.email
+        && after.status == 'accepted' && after.accepted_by == uid
+        && slot.user_id == uid && slot.invite_id == inviteId && slot.membership_id == memberId
+        && acl.user_id == uid && acl.couple_id == root && acl.role == 'partner'
+        && acl.invite_id == inviteId && acl.membership_id == memberId
+        && userRoot.root_id == root && userRoot.invite_id == inviteId && userRoot.membership_id == memberId
+        && m.id == memberId && m.couple_id == root && m.user_id == uid && m.role == 'partner';
+    }
+    match /user_roots/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list, update, delete: if false;
+      allow create: if signedIn() && uid == request.auth.uid
+        && request.resource.data.root_id is string && request.resource.data.membership_id is string
+        && (ownerBootstrap(request.resource.data.root_id, uid, request.resource.data.membership_id)
+          || (request.resource.data.invite_id is string && acceptedInvite(request.resource.data.root_id, uid, request.resource.data.invite_id, request.resource.data.membership_id)));
+    }
+    match /access/{root}/members/{uid} {
+      allow get: if signedIn() && uid == request.auth.uid;
+      allow list, update, delete: if false;
+      allow create: if signedIn() && uid == request.auth.uid
+        && request.resource.data.membership_id is string
+        && (ownerBootstrap(root, uid, request.resource.data.membership_id)
+          || (request.resource.data.invite_id is string && acceptedInvite(root, uid, request.resource.data.invite_id, request.resource.data.membership_id)));
+    }
+    match /access/{root}/slots/partner {
+      allow get: if owner(root);
+      allow list, update, delete: if false;
+      allow create: if signedIn() && request.resource.data.user_id == request.auth.uid
+        && request.resource.data.invite_id is string && request.resource.data.membership_id is string
+        && acceptedInvite(root, request.auth.uid, request.resource.data.invite_id, request.resource.data.membership_id);
+    }
+    match /profiles/{uid} {
+      allow read: if signedIn() && (uid == request.auth.uid || partnerProfile(uid));
+      allow create: if signedIn() && uid == request.auth.uid
+        && request.resource.data.id == uid && request.resource.data.email == request.auth.token.email
+        && request.resource.data.keys().hasOnly(['id', 'name', 'email', 'birth_date', 'bio', 'created_at'])
+        && optionalText(request.resource.data.name, 100) && optionalText(request.resource.data.bio, 500)
+        && optionalText(request.resource.data.birth_date, 10) && smallString(request.resource.data.created_at, 40);
+      allow update: if signedIn() && uid == request.auth.uid
+        && unchanged(['id', 'created_at']) && request.resource.data.email == request.auth.token.email
+        && request.resource.data.keys().hasOnly(['id', 'name', 'email', 'birth_date', 'bio', 'created_at'])
+        && optionalText(request.resource.data.name, 100) && optionalText(request.resource.data.bio, 500)
+        && optionalText(request.resource.data.birth_date, 10);
+      allow delete: if false;
+    }
+    match /couples/{id} {
+      allow read: if resource.data.parent_id == null
+        ? resource.data.visibility == 'public' || memberRoot(id)
+        : couple(resource.data.parent_id).visibility == 'public' || memberRoot(resource.data.parent_id);
+      allow create: if signedIn() && request.resource.data.id == id
+        && request.resource.data.created_by == request.auth.uid
+        && smallString(request.resource.data.name, 120) && request.resource.data.name.size() >= 2
+        && request.resource.data.visibility in ['public', 'private']
+        && ((request.resource.data.parent_id == null
+          && getAfter(ownRootPath()).data.root_id == id
+          && ownerBootstrap(id, request.auth.uid, getAfter(ownRootPath()).data.membership_id))
+          || (request.resource.data.parent_id is string && owner(request.resource.data.parent_id)
+            && couple(request.resource.data.parent_id).parent_id == null
+            && request.resource.data.visibility == couple(request.resource.data.parent_id).visibility));
+      allow update: if owner(rootId(id)) && unchanged(['id', 'parent_id', 'created_by', 'created_at'])
+        && smallString(request.resource.data.name, 120) && request.resource.data.name.size() >= 2
+        && request.resource.data.visibility in ['public', 'private'];
+      allow delete: if owner(rootId(id)) && resource.data.parent_id != null;
+    }
+    match /couple_members/{id} {
+      allow read: if signedIn() && (resource.data.user_id == request.auth.uid || memberRoot(resource.data.couple_id));
+      allow create: if signedIn() && request.resource.data.id == id && request.resource.data.user_id == request.auth.uid
+        && ((request.resource.data.role == 'owner' && ownerBootstrap(request.resource.data.couple_id, request.auth.uid, id))
+          || (request.resource.data.role == 'partner'
+            && getAfter(ownRootPath()).data.invite_id is string
+            && acceptedInvite(request.resource.data.couple_id, request.auth.uid, getAfter(ownRootPath()).data.invite_id, id)));
+      allow update, delete: if false;
+    }
+    match /invites/{id} {
+      allow read: if signedIn() && (resource.data.email == request.auth.token.email || owner(resource.data.couple_id));
+      allow create: if signedIn() && request.resource.data.id == id && owner(request.resource.data.couple_id)
+        && request.resource.data.created_by == request.auth.uid && request.resource.data.status == 'pending'
+        && smallString(request.resource.data.email, 254) && smallString(request.resource.data.created_at, 40)
+        && request.resource.data.keys().hasOnly(['id', 'couple_id', 'email', 'created_by', 'status', 'created_at']);
+      allow update: if signedIn() && request.auth.token.email_verified == true
+        && resource.data.email == request.auth.token.email && resource.data.status == 'pending'
+        && request.resource.data.status == 'accepted' && request.resource.data.accepted_by == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'accepted_by', 'accepted_at'])
+        && smallString(request.resource.data.accepted_at, 40)
+        && acceptedInvite(resource.data.couple_id, request.auth.uid, id, getAfter(ownRootPath()).data.membership_id);
+      allow delete: if owner(resource.data.couple_id);
+    }
+    match /timeline_events/{id} {
+      allow read: if canRead(resource.data.couple_id);
+      allow create: if signedIn() && base(request.resource.data, id) && title(request.resource.data)
+        && request.resource.data.created_by == request.auth.uid && member(request.resource.data.couple_id);
+      allow update: if member(resource.data.couple_id) && member(request.resource.data.couple_id)
+        && unchanged(['id', 'created_by', 'created_at']) && base(request.resource.data, id) && title(request.resource.data);
+      allow delete: if member(resource.data.couple_id);
+    }
+    match /timeline_photos/{id} {
+      function event(id) { return get(/databases/$(database)/documents/timeline_events/$(id)).data; }
+      allow read: if canRead(event(resource.data.event_id).couple_id);
+      allow create: if signedIn() && request.resource.data.id == id
+        && smallString(request.resource.data.storage_path, 1024)
+        && member(getAfter(/databases/$(database)/documents/timeline_events/$(request.resource.data.event_id)).data.couple_id);
+      allow update: if member(event(resource.data.event_id).couple_id)
+        && unchanged(['id', 'event_id', 'created_at'])
+        && (request.resource.data.storage_path == resource.data.storage_path
+          || (member(getAfter(/databases/$(database)/documents/timeline_events/$(resource.data.event_id)).data.couple_id)
+            && request.resource.data.storage_path.matches('^couples/' + getAfter(/databases/$(database)/documents/timeline_events/$(resource.data.event_id)).data.couple_id + '/events/' + resource.data.event_id + '/.+$')));
+      allow delete: if member(event(resource.data.event_id).couple_id);
+    }
+    match /couple_gifts/{id} {
+      allow read: if member(resource.data.couple_id);
+      allow create: if signedIn() && base(request.resource.data, id) && title(request.resource.data)
+        && member(request.resource.data.couple_id) && request.resource.data.created_by == request.auth.uid
+        && exists(/databases/$(database)/documents/access/$(rootId(request.resource.data.couple_id))/members/$(request.resource.data.recipient_id));
+      allow update: if member(resource.data.couple_id) && unchanged(['id', 'couple_id', 'created_by', 'created_at', 'recipient_id'])
+        && base(request.resource.data, id) && title(request.resource.data)
+        && (resource.data.created_by == request.auth.uid
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updated_at'])
+            && request.resource.data.status in ['purchased', 'received']));
+      allow delete: if member(resource.data.couple_id) && resource.data.created_by == request.auth.uid;
+    }
+    match /{kind}/{id} {
+      allow read: if kind in ['couple_calendar_entries', 'future_moments', 'couple_monthly_plans'] && member(resource.data.couple_id);
+      allow create: if kind in ['couple_calendar_entries', 'future_moments', 'couple_monthly_plans']
+        && signedIn() && base(request.resource.data, id) && title(request.resource.data)
+        && request.resource.data.created_by == request.auth.uid && member(request.resource.data.couple_id);
+      allow update: if kind in ['couple_calendar_entries', 'future_moments', 'couple_monthly_plans']
+        && member(resource.data.couple_id) && unchanged(['id', 'couple_id', 'created_by', 'created_at'])
+        && base(request.resource.data, id) && title(request.resource.data);
+      allow delete: if kind in ['couple_calendar_entries', 'future_moments', 'couple_monthly_plans'] && member(resource.data.couple_id);
+    }
+    match /timeline_event_comments/{id} {
+      allow read: if member(get(/databases/$(database)/documents/timeline_events/$(resource.data.event_id)).data.couple_id);
+      allow create: if signedIn() && base(request.resource.data, id) && request.resource.data.author_id == request.auth.uid
+        && smallString(request.resource.data.content, 1000) && request.resource.data.content.size() > 0
+        && member(request.resource.data.couple_id)
+        && get(/databases/$(database)/documents/timeline_events/$(request.resource.data.event_id)).data.couple_id == request.resource.data.couple_id;
+      allow update: if member(resource.data.couple_id) && resource.data.author_id == request.auth.uid
+        && unchanged(['id', 'couple_id', 'event_id', 'author_id', 'parent_comment_id', 'created_at'])
+        && smallString(request.resource.data.content, 1000) && request.resource.data.content.size() > 0;
+      allow delete: if member(resource.data.couple_id) && (resource.data.author_id == request.auth.uid
+        || !existsAfter(/databases/$(database)/documents/timeline_events/$(resource.data.event_id)));
+    }
+    match /timeline_event_comment_reactions/{id} {
+      function comment(id) { return get(/databases/$(database)/documents/timeline_event_comments/$(id)).data; }
+      allow get: if signedIn() && (resource == null || member(comment(resource.data.comment_id).couple_id));
+      allow list: if member(comment(resource.data.comment_id).couple_id);
+      allow create: if signedIn() && request.resource.data.id == id && request.resource.data.user_id == request.auth.uid
+        && request.resource.data.emoji in ['❤️', '😍', '😂', '🥹', '👏', '🔥']
+        && member(comment(request.resource.data.comment_id).couple_id);
+      allow update: if false;
+      allow delete: if signedIn() && member(comment(resource.data.comment_id).couple_id)
+        && (resource.data.user_id == request.auth.uid
+          || !existsAfter(/databases/$(database)/documents/timeline_events/$(comment(resource.data.comment_id).event_id)));
+    }
+  }
+}

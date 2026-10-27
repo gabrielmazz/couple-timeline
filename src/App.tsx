@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
+import { Center, Loader } from '@mantine/core'
 import { lazy, Suspense } from 'react'
 import { ProtectedRoute } from './components/auth/ProtectedRoute'
 import { AppBackgroundProvider } from './components/layout/AppBackgroundProvider'
@@ -16,6 +17,15 @@ import { TimelinePage } from './pages/TimelinePage'
 import { TruthOrDarePage } from './pages/TruthOrDarePage'
 
 const CoupleQuizPage = lazy(() => import('./pages/CoupleQuizPage').then(({ CoupleQuizPage: page }) => ({ default: page })))
+const MonthlyPlansPage = lazy(() => import('./pages/MonthlyPlansPage').then(({ MonthlyPlansPage: page }) => ({ default: page })))
+
+function MonthlyPlansLoading() {
+  return (
+    <Center mih="55vh">
+      <Loader color="pink" aria-label="Carregando planos do mês" />
+    </Center>
+  )
+}
 
 export default function App() {
   return (
@@ -54,6 +64,16 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <CalendarPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/planos-do-mes"
+            element={
+              <ProtectedRoute>
+                <Suspense fallback={<MonthlyPlansLoading />}>
+                  <MonthlyPlansPage />
+                </Suspense>
               </ProtectedRoute>
             }
           />

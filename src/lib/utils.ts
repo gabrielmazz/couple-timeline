@@ -54,10 +54,6 @@ export function getErrorMessage(error: unknown, fallback = 'Tente novamente.') {
   if (typeof error === 'object' && error !== null) {
     const maybeError = error as { code?: string; message?: string }
 
-    if (maybeError.code === 'PGRST205' || maybeError.message?.includes('schema cache')) {
-      return 'As tabelas do Supabase ainda não existem no projeto configurado. Execute supabase/schema.sql no SQL Editor do Supabase e recarregue o schema cache.'
-    }
-
     if (maybeError.message) {
       return maybeError.message
     }

@@ -1,51 +1,20 @@
-import type { Session } from '@supabase/supabase-js'
+import { onAuthStateChanged } from 'firebase/auth'
 import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '../../lib/supabase/client'
-import { AuthContext } from './auth-context'
+import { firebaseAuth } from '../../lib/firebase/client'
+import { AuthContext, type AppUser } from './auth-context'
+
+function currentUser(): AppUser | null {
+  const user = firebaseAuth.currentUser
+  return user ? { id: user.uid, email: user.email, user_metadata: { name: user.displayName } } : null
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null)
+  const [user, setUser] = useState<AppUser | null>(null)
   const [loading, setLoading] = useState(true)
-
-  async function refreshSession() {
-    const { data } = await supabase.auth.getSession()
-    setSession(data.session)
-  }
-
-  useEffect(() => {
-    let mounted = true
-
-    supabase.auth.getSession().then(({ data }) => {
-      if (!mounted) {
-        return
-      }
-
-      setSession(data.session)
-      setLoading(false)
-    })
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession)
-      setLoading(false)
-    })
-
-    return () => {
-      mounted = false
-      subscription.unsubscribe()
-    }
-  }, [])
-
-  const value = useMemo(
-    () => ({
-      session,
-      user: session?.user ?? null,
-      loading,
-      refreshSession,
-    }),
-    [loading, session],
-  )
-
+  useEffect(() => onAuthStateChanged(firebaseAuth, () => {
+    setUser(currentUser())
+    setLoading(false)
+  }), [])
+  const value = useMemo(() => ({ user, loading, refreshSession: async () => setUser(currentUser()) }), [user, loading])
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
