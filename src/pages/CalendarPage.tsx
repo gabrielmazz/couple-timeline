@@ -36,6 +36,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { calendarEntryCategories, createCalendarEntry, deleteCalendarEntry, updateCalendarEntry } from '../lib/calendar/actions'
 import { fetchCalendarPage } from '../lib/calendar/queries'
+import { getAnnualDate, getCalendarEntryDate } from '../lib/calendar/recurrence'
 import { getErrorMessage } from '../lib/utils'
 import type { CalendarEntryCategory, CoupleCalendarEntry } from '../types/database'
 import type { CalendarEntryFormModel, CalendarPageData } from '../types/calendar'
@@ -119,12 +120,6 @@ function getDaysUntil(date: string) {
   return Math.round((target.getTime() - today.getTime()) / 86400000)
 }
 
-function getAnnualDate(monthDay: string, year: number) {
-  const [month, day] = monthDay.split('-').map(Number)
-  const maxDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
-  return `${year}-${String(month).padStart(2, '0')}-${String(Math.min(day, maxDay)).padStart(2, '0')}`
-}
-
 function getAnnualItems(data: CalendarPageData, year: number): CalendarItem[] {
   const items: CalendarItem[] = []
 
@@ -168,12 +163,15 @@ function getAnnualItems(data: CalendarPageData, year: number): CalendarItem[] {
 }
 
 function getCalendarItems(data: CalendarPageData, year: number): CalendarItem[] {
-  const entries: CalendarItem[] = data.entries.map((entry) => ({
+  const entries: CalendarItem[] = data.entries.flatMap((entry) => {
+    const eventDate = getCalendarEntryDate(entry, year)
+    if (!eventDate) return []
+    return [{
     id: entry.id,
     source: 'calendar',
     title: entry.title,
     description: entry.description,
-    eventDate: entry.event_date,
+    eventDate,
     eventTime: entry.event_time,
     locationName: entry.location_name,
     category: entry.category,
@@ -181,7 +179,8 @@ function getCalendarItems(data: CalendarPageData, year: number): CalendarItem[] 
     reminderDaysBefore: entry.reminder_days_before,
     editable: data.canEdit,
     entry,
-  }))
+    }]
+  })
   const memories: CalendarItem[] = data.timelineEvents.map((event) => ({
     id: `timeline-${event.id}`,
     source: 'timeline',
@@ -351,14 +350,16 @@ export function CalendarPage() {
     }
 
     const today = getTodayIso()
-    const items = [...getCalendarItems(data, displayYear), ...getAnnualItems(data, displayYear + 1)]
+    const currentYear = Number(today.slice(0, 4))
+    const years = new Set([currentYear, currentYear + 1, ...data.entries.map((entry) => Number(entry.event_date.slice(0, 4))).filter((year) => year > currentYear)])
+    const items = [...years].flatMap((year) => getCalendarItems(data, year))
 
     return items
       .filter((item) => item.source !== 'timeline' && item.eventDate >= today)
       .sort((first, second) => first.eventDate.localeCompare(second.eventDate))
       .filter((item, index, allItems) => allItems.findIndex((candidate) => candidate.id === item.id) === index)
       .slice(0, 5)
-  }, [data, displayYear])
+  }, [data])
   const nextItem = upcomingItems[0] ?? null
 
   function openCreate(date = selectedDate) {
@@ -377,7 +378,7 @@ export function CalendarPage() {
       eventTime: formatTime(entry.event_time) ?? '',
       locationName: entry.location_name ?? '',
       category: entry.category,
-      recurrence: entry.recurrence,
+      recurrence: entry.recurrence ?? 'none',
       reminderDaysBefore: String(entry.reminder_days_before),
     })
     form.resetDirty()
@@ -719,6 +720,13 @@ export function CalendarPage() {
                 leftSection={<Bell size={15} />}
               />
             </SimpleGrid>
+            <Select
+              label="Repetição"
+              data={[{ value: 'none', label: 'Não repetir' }, { value: 'yearly', label: 'Todos os anos' }]}
+              value={form.values.recurrence}
+              onChange={(value) => form.setFieldValue('recurrence', value === 'yearly' ? 'yearly' : 'none')}
+              allowDeselect={false}
+            />
             <TextInput
               label="Local"
               placeholder="Restaurante, cidade ou endereço"
