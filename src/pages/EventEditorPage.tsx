@@ -1,6 +1,6 @@
-import { Alert, Container, Group, Loader, Stack } from '@mantine/core'
+import { Alert, Button, Container, Group, Loader, Stack } from '@mantine/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { useAppBackground } from '../components/layout/AppBackgroundContext'
 import { EventForm } from '../components/timeline/EventForm'
 import { getPhotoBackgroundImages } from '../lib/timeline/background'
@@ -126,6 +126,10 @@ export function EventEditorPage({ mode }: { mode: 'create' | 'edit' }) {
           <Alert color="red" radius={8} title="Erro">
             {error}
           </Alert>
+          <Group>
+            <Button variant="light" component={Link} to={`/timeline/${coupleId}`}>Voltar à timeline</Button>
+            <Button onClick={() => void load()}>Tentar novamente</Button>
+          </Group>
         </Stack>
       ) : (
 		<EventForm

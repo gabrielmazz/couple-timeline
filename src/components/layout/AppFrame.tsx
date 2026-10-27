@@ -9,6 +9,7 @@ import { AppNavigationMenu } from './AppNavigationMenu'
 export function AppFrame({ children }: { children: React.ReactNode }) {
 	return (
 		<Box className="app-shell">
+			<a className="skip-link" href="#conteudo">Pular para o conteúdo</a>
 			<AppNavigationMenu />
 
 			{!isFirebaseConfigured ? (
@@ -19,7 +20,7 @@ export function AppFrame({ children }: { children: React.ReactNode }) {
 				</Container>
 			) : null}
 
-			<main className="app-main">{children}</main>
+			<main id="conteudo" className="app-main" tabIndex={-1}>{children}</main>
 		</Box>
 	)
 }

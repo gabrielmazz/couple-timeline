@@ -145,7 +145,7 @@ export function TimelineEventModal({
 	onPhotoPreview: (photo: PhotoPreview) => void
 }) {
 	const navigate = useNavigate()
-	const isMobile = useMediaQuery('(max-width: 760px)')
+	const isMobile = useMediaQuery('(max-width: 760px)', false, { getInitialValueInEffect: false })
 	const [deleting, setDeleting] = useState(false)
 	const [embla, setEmbla] = useState<EmblaCarouselType | null>(null)
 	const photoSlides = event?.photos.filter((photo) => photo.signedUrl) ?? []
@@ -209,6 +209,7 @@ export function TimelineEventModal({
 	return (
 		<Modal
 			opened={opened}
+			aria-label={`Detalhes de ${activeEvent.title}`}
 			onClose={onClose}
 			fullScreen={isMobile}
 			size="xl"
@@ -236,7 +237,7 @@ export function TimelineEventModal({
 					</ActionIcon>
 
 						{loadingPhotos ? (
-							<Group justify="center" gap="sm" py="xl">
+							<Group className={activeEvent.coverUrl ? 'timeline-event-photo-loading' : undefined} justify="center" gap="sm" py="xl" role="status">
 								<Loader color="pink" size="sm" />
 								<Text size="sm" c="dimmed">
 									Carregando fotos do evento…

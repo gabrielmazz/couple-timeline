@@ -19,10 +19,10 @@ import { TruthOrDarePage } from './pages/TruthOrDarePage'
 const CoupleQuizPage = lazy(() => import('./pages/CoupleQuizPage').then(({ CoupleQuizPage: page }) => ({ default: page })))
 const MonthlyPlansPage = lazy(() => import('./pages/MonthlyPlansPage').then(({ MonthlyPlansPage: page }) => ({ default: page })))
 
-function MonthlyPlansLoading() {
+function PageLoading() {
   return (
     <Center mih="55vh">
-      <Loader color="pink" aria-label="Carregando planos do mês" />
+      <Loader color="pink" aria-label="Carregando página" />
     </Center>
   )
 }
@@ -71,7 +71,7 @@ export default function App() {
             path="/planos-do-mes"
             element={
               <ProtectedRoute>
-                <Suspense fallback={<MonthlyPlansLoading />}>
+                <Suspense fallback={<PageLoading />}>
                   <MonthlyPlansPage />
                 </Suspense>
               </ProtectedRoute>
@@ -105,7 +105,7 @@ export default function App() {
             path="/jogos/quem-conhece-melhor"
             element={
               <ProtectedRoute>
-                <Suspense fallback={null}>
+                <Suspense fallback={<PageLoading />}>
                   <CoupleQuizPage />
                 </Suspense>
               </ProtectedRoute>
@@ -115,7 +115,7 @@ export default function App() {
             path="/jogos/quiz-do-casal"
             element={
               <ProtectedRoute>
-                <Suspense fallback={null}>
+                <Suspense fallback={<PageLoading />}>
                   <CoupleQuizPage />
                 </Suspense>
               </ProtectedRoute>

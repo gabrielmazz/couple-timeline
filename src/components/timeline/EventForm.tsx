@@ -17,8 +17,8 @@ import { DateInput } from '@mantine/dates'
 import { useForm } from '@mantine/form'
 import { notifications } from '@mantine/notifications'
 import { CalendarHeart, Save } from 'lucide-react'
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
 	createTimelineEvent,
 	eventCategories,
@@ -102,6 +102,24 @@ export function EventForm({
 		? targetTimelineId
 		: null
 	const destinationTimelineId = selectedTimelineId ?? rootTimelineId
+	const hasUnsavedChanges = form.isDirty() || files.length > 0 || removedPhotoIds.length > 0 ||
+		targetTimelineId !== (event?.couple_id ?? null) || coverPhotoPath !== (event?.cover_photo_path ?? null) ||
+		existingPhotoOrder.some((id, index) => id !== event?.photos[index]?.id)
+
+	useEffect(() => {
+		if (!hasUnsavedChanges || saving) return
+		const warnBeforeLeaving = (e: BeforeUnloadEvent) => {
+			e.preventDefault()
+		}
+		window.addEventListener('beforeunload', warnBeforeLeaving)
+		return () => window.removeEventListener('beforeunload', warnBeforeLeaving)
+	}, [hasUnsavedChanges, saving])
+
+	function cancelEditing() {
+		if (!hasUnsavedChanges || window.confirm('Descartar as alterações deste evento?')) {
+			navigate(`/timeline/${coupleId}`)
+		}
+	}
 
 	async function handleSubmit(values: EventFormModel) {
 		if (!event && files.length === 0) {
@@ -183,8 +201,8 @@ export function EventForm({
 							</Text>
 							<Title order={1}>{event ? 'Atualizar evento' : 'Criar evento'}</Title>
 						</Stack>
-						<Button component={Link} to={`/timeline/${coupleId}`} variant="subtle" color="pink">
-							Voltar
+						<Button type="button" onClick={cancelEditing} disabled={saving} variant="subtle" color="pink">
+							Cancelar
 						</Button>
 					</Group>
 

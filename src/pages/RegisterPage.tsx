@@ -69,17 +69,18 @@ export function RegisterPage() {
   }
 
   return (
-    <Container size={500} py={{ base: 40, sm: 72 }}>
-      <Paper className="glass-panel" radius={8} p={{ base: 'md', sm: 'xl' }} withBorder>
+    <Container size={500} py={{ base: 32, sm: 72 }} className="auth-page">
+      <Paper className="glass-panel auth-panel" radius={8} p={{ base: 'lg', sm: 'xl' }} withBorder>
         <form onSubmit={form.onSubmit(handleSubmit)}>
           <Stack gap="lg">
             <Stack gap={4}>
+              <Text className="auth-eyebrow">Comecem por aqui</Text>
               <Title order={1}>Criar conta</Title>
-              <Text c="dimmed">Cadastre-se para criar sua primeira timeline.</Text>
+              <Text c="dimmed">Crie seu acesso para guardar e compartilhar a história de vocês.</Text>
             </Stack>
-            <TextInput label="Nome" required {...form.getInputProps('name')} />
-            <TextInput label="E-mail" type="email" required {...form.getInputProps('email')} />
-            <PasswordInput label="Senha" required {...form.getInputProps('password')} />
+            <TextInput label="Nome" autoComplete="name" required {...form.getInputProps('name')} />
+            <TextInput label="E-mail" type="email" autoComplete="email" required {...form.getInputProps('email')} />
+            <PasswordInput label="Senha" description="Use pelo menos 6 caracteres." autoComplete="new-password" required {...form.getInputProps('password')} />
             <Button type="submit" color="pink" loading={submitting} leftSection={<UserPlus size={17} />}>
               Criar conta
             </Button>

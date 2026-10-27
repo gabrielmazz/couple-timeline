@@ -66,16 +66,17 @@ export function LoginPage() {
   }
 
   return (
-    <Container size={460} py={{ base: 40, sm: 72 }}>
-      <Paper className="glass-panel" radius={8} p={{ base: 'md', sm: 'xl' }} withBorder>
+    <Container size={500} py={{ base: 32, sm: 72 }} className="auth-page">
+      <Paper className="glass-panel auth-panel" radius={8} p={{ base: 'lg', sm: 'xl' }} withBorder>
         <form onSubmit={form.onSubmit(handleSubmit)}>
           <Stack gap="lg">
             <Stack gap={4}>
-              <Title order={1}>Entrar</Title>
-              <Text c="dimmed">Acesse suas timelines de casal.</Text>
+              <Text className="auth-eyebrow">Um espaço para a história de vocês</Text>
+              <Title order={1}>Que bom ter você aqui.</Title>
+              <Text c="dimmed">Entre para rever memórias e planejar os próximos momentos.</Text>
             </Stack>
-            <TextInput label="E-mail" type="email" required {...form.getInputProps('email')} />
-            <PasswordInput label="Senha" required {...form.getInputProps('password')} />
+            <TextInput label="E-mail" type="email" autoComplete="email" required {...form.getInputProps('email')} />
+            <PasswordInput label="Senha" autoComplete="current-password" required {...form.getInputProps('password')} />
             <Button type="submit" color="pink" loading={submitting} leftSection={<LogIn size={17} />}>
               Entrar
             </Button>

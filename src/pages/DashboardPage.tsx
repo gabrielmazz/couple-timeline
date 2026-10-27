@@ -41,8 +41,6 @@ import { firebaseAuth } from '../lib/firebase/client'
 import type { CoupleRole, TimelineVisibility } from '../types/database'
 import type { CoupleListItem, TimelineTree, TimelineTreeItem } from '../types/timeline'
 
-import BlurText from '../components/ui/BlurText'
-import CSSBlurText from '../components/ui/BlurText.module.css'
 
 type CoupleForm = {
 	name: string
@@ -392,17 +390,12 @@ export function DashboardPage() {
 				<Group justify="space-between" align="flex-end" gap="lg">
 					<Stack gap={4}>
 						<Text c="var(--palette-blush)" fw={800} tt="uppercase" size="xs">
-							Dashboard
+							Seu espaço
 						</Text>
-						<BlurText
-							text="Sua árvore de timelines"
-							delay={250}
-							animateBy="words"
-							direction="top"
-							className={CSSBlurText.titleBlurTextTimeLineCouple}
-						/>
+						<Title order={1}>Sua árvore de timelines</Title>
+						<Text c="dimmed">Reúna os capítulos da história de vocês em um só lugar.</Text>
 					</Stack>
-					{canManageRelationship || !tree ? (
+					{!loading && !error && (canManageRelationship || !tree) ? (
 						<Button color="pink" leftSection={<Plus size={17} />} onClick={openCreateModal}>
 							Nova timeline
 						</Button>
@@ -411,11 +404,12 @@ export function DashboardPage() {
 
 				{loading ? (
 					<Group justify="center" py="xl">
-						<Loader color="pink" />
+						<Loader color="pink" aria-label="Carregando timelines" />
 					</Group>
 				) : error ? (
 					<Alert color="red" radius={8} title="Erro">
 						{error}
+						<Button mt="sm" variant="light" color="red" onClick={() => void loadTree()}>Tentar novamente</Button>
 					</Alert>
 				) : !tree ? (
 					<Alert
