@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# git-commit.sh - Fluxo seguro para stage, commit, rebase, merge e push.
 
+# =====================[ Config Inicial ]=====================
 set -o errexit
 set -o pipefail
 set -o nounset
-IFS=$'\n\t'
 
-# ==== UI ====
+# Cores
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -15,920 +14,297 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
-say()   { printf "%b\n" "$*"; }
-ok()    { say "${GREEN}OK${RESET} $*"; }
-warn()  { say "${YELLOW}AVISO:${RESET} $*" >&2; }
-alert() { say "${BOLD}${RED}ERRO:${RESET} $*" >&2; }
-step()  { say "${CYAN}${BOLD}> $*${RESET}"; }
+# Mensagem de commit: 1º arg ou pergunta interativa
+MESSAGE="${1:-}"
 
-usage() {
-  cat <<'USAGE'
-Uso:
-  ./git-commit.sh "mensagem do commit"
-  ./git-commit.sh
+# Branches que exigem alerta forte
+PROTECTED_BRANCHES=("main" "master")
 
-O script:
-  - evita commitar .env e .env.*;
-  - detecta rebase/merge/cherry-pick/revert em andamento;
-  - faz commit apenas quando ha staged changes;
-  - sincroniza com upstream usando rebase + autostash;
-  - tenta recuperar push rejeitado com fetch + rebase + novo push.
-USAGE
-}
-
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  usage
-  exit 0
-fi
-
-MESSAGE="${*:-}"
-PROTECTED_BRANCHES=("main" "master" "develop" "production" "release")
+# =====================[ Funções utilitárias ]================
+die() { echo -e "${RED}Erro:${RESET} $*" >&2; exit 1; }
 
 confirm() {
   local prompt="${1:-Continuar? [s/N]} "
-  local ans=""
-  read -r -p "$(printf "%b" "${YELLOW}${prompt}${RESET}")" ans || true
-  [[ "${ans:-}" =~ ^([sS]([iI][mM])?|[yY]([eE][sS])?)$ ]]
+  read -r -p "$(echo -e "${YELLOW}${prompt}${RESET}")" ans || true
+  [[ "${ans:-}" =~ ^([sS][iI]?[mM]?|y|Y)$ ]]
 }
 
-confirm_yes() {
-  local prompt="${1:-Continuar? [S/n]} "
-  local ans=""
-  read -r -p "$(printf "%b" "${YELLOW}${prompt}${RESET}")" ans || true
-  [[ -z "${ans:-}" || "${ans:-}" =~ ^([sS]([iI][mM])?|[yY]([eE][sS])?)$ ]]
-}
+say()   { echo -e "$*"; }
+step()  { echo -e "${CYAN}${BOLD}▶ $*${RESET}"; }
+ok()    { echo -e "${GREEN}✔${RESET} $*"; }
+warn()  { echo -e "${YELLOW}⚠ $*${RESET}"; }
+alert() { echo -e "${BOLD}${RED}⛔ $*${RESET}"; }
 
-has_cmd() { command -v "$1" >/dev/null 2>&1; }
+# --------------------- Git helpers --------------------------
+current_branch() { git rev-parse --abbrev-ref HEAD; }
 
-die() {
-  alert "$*"
-  exit 1
-}
+# =====================[ Pré-checagens ]======================
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "Este diretório não é um repositório Git."
 
-# ==== Repo / Git state ====
-git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "Este diretorio nao e um repositorio Git."
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-cd "$REPO_ROOT"
+cd "${REPO_ROOT}"
 
-detect_remote() {
-  if git remote | grep -qxF origin; then
-    printf "origin\n"
-    return 0
+BRANCH="$(current_branch)"
+REMOTE="$(git remote 2>/dev/null | head -n1 || true)"
+REMOTE_URL=""
+if [[ -n "${REMOTE}" ]]; then
+  REMOTE_URL="$(git remote get-url --push "${REMOTE}" 2>/dev/null || true)"
+fi
+
+say ""
+say "${BOLD}Repositório:${RESET} $(basename "${REPO_ROOT}")"
+say "${BOLD}Branch atual:${RESET} ${BLUE}${BRANCH}${RESET}"
+[[ -n "${REMOTE}" ]] && say "${BOLD}Remote:${RESET} ${REMOTE}  ${BOLD}URL:${RESET} ${REMOTE_URL}"
+
+# Detecta qual é o branch principal (main/master)
+if git rev-parse --verify main >/dev/null 2>&1; then
+  MAIN_BRANCH="main"
+elif git rev-parse --verify master >/dev/null 2>&1; then
+  MAIN_BRANCH="master"
+else
+  MAIN_BRANCH="main"  # fallback
+fi
+
+# Alerta se branch protegida
+for b in "${PROTECTED_BRANCHES[@]}"; do
+  if [[ "${BRANCH}" == "${b}" ]]; then
+    alert "Você está na branch protegida: ${BRANCH}"
+    confirm "Tem certeza que deseja commitar/push na ${BRANCH}? [s/N] " || die "Operação abortada pelo usuário."
+    break
   fi
+done
 
-  git remote | head -n1 || true
-}
-
-REMOTE="$(detect_remote)"
-
-refresh_remote() {
-  REMOTE="$(detect_remote)"
-}
-
-require_remote() {
-  refresh_remote
-  if [[ -z "${REMOTE:-}" ]]; then
-    warn "Nenhum remote configurado."
-    return 1
+# =========[ Prefixo de commit derivado da branch ]===========
+BASE_BRANCH="${BRANCH##*/}"
+COMMIT_PREFIX=""
+if [[ "$BASE_BRANCH" == *-* ]]; then
+  CANDIDATE="${BASE_BRANCH%%-*}"
+  if [[ "$CANDIDATE" =~ ^[A-Za-z]+[0-9]+$ ]]; then
+    COMMIT_PREFIX="${CANDIDATE} - "
   fi
-}
+fi
 
-current_branch() {
-  git branch --show-current 2>/dev/null || true
-}
+# Mostrar resumo do status
+say ""
+step "Resumo de alterações (git status --short):"
+git status --short
+echo ""
 
-display_branch() {
-  local branch
-  branch="$(current_branch)"
-  if [[ -n "$branch" ]]; then
-    printf "%s\n" "$branch"
-  else
-    printf "detached@%s\n" "$(git rev-parse --short HEAD)"
+# Contagens úteis
+TOTAL_CHANGED=$(git status --porcelain | wc -l | tr -d ' ')
+if [[ "${TOTAL_CHANGED}" -eq 0 ]]; then
+  warn "Nenhuma alteração detectada no working tree."
+  if ! confirm "Deseja continuar mesmo assim (pode apenas puxar/push sem commit)? [s/N] "; then
+    die "Nada a fazer. Abortado."
   fi
-}
+fi
 
-sanitize_branch_name() {
-  local raw="$1"
-  local value="$raw"
-
-  if has_cmd iconv; then
-    value="$(printf "%s" "$value" | iconv -f UTF-8 -t ASCII//TRANSLIT 2>/dev/null || printf "%s" "$raw")"
-  fi
-
-  value="$(printf "%s" "$value" | tr '[:upper:]' '[:lower:]')"
-  value="$(printf "%s" "$value" | sed -E \
-    -e 's/[[:space:]]+/-/g' \
-    -e 's#[^a-z0-9._/-]+#-#g' \
-    -e 's#/{2,}#/#g' \
-    -e 's/-+/-/g' \
-    -e 's#\.+#.#g' \
-    -e 's#(^[/.-]+|[/.-]+$)##g' \
-    -e 's#/[./-]+#/#g' \
-    -e 's#[./-]+/#/#g')"
-
-  printf "%s\n" "$value"
-}
-
-valid_branch_name() {
-  local name="$1"
-  [[ -n "$name" ]] || return 1
-  [[ "$name" != -* ]] || return 1
-  [[ "$name" != *"@{"* ]] || return 1
-  [[ "$name" != *".lock" ]] || return 1
-  git check-ref-format --branch "$name" >/dev/null 2>&1
-}
-
-ensure_named_branch() {
-  local branch
-  branch="$(current_branch)"
-  if [[ -n "$branch" ]]; then
-    return 0
-  fi
-
-  alert "Voce esta em detached HEAD. Push direto daqui nao e seguro."
-  confirm "Criar uma branch a partir do commit atual? [s/N] " || return 1
-
-  local raw=""
-  local name=""
-  while true; do
-    read -r -p "Nome da nova branch: " raw
-    name="$(sanitize_branch_name "$raw")"
-    if valid_branch_name "$name"; then
-      break
-    fi
-    warn "Nome invalido: ${name:-vazio}"
-  done
-
-  git switch -c "$name" 2>/dev/null || git checkout -b "$name"
-  ok "Branch '${name}' criada."
-}
-
-local_branch_exists() {
-  git show-ref --verify --quiet "refs/heads/$1"
-}
-
-remote_branch_exists() {
-  require_remote || return 1
-  git show-ref --verify --quiet "refs/remotes/${REMOTE}/$1" \
-    || git ls-remote --exit-code --heads "$REMOTE" "refs/heads/$1" >/dev/null 2>&1
-}
-
-detect_main_branch() {
-  if [[ -n "${REMOTE:-}" ]] && git symbolic-ref --quiet --short "refs/remotes/${REMOTE}/HEAD" >/dev/null 2>&1; then
-    git symbolic-ref --short "refs/remotes/${REMOTE}/HEAD" | sed "s#^${REMOTE}/##"
-    return 0
-  fi
-
-  if local_branch_exists main || git show-ref --verify --quiet "refs/remotes/${REMOTE:-origin}/main"; then
-    printf "main\n"
-  elif local_branch_exists master || git show-ref --verify --quiet "refs/remotes/${REMOTE:-origin}/master"; then
-    printf "master\n"
-  else
-    printf "main\n"
-  fi
-}
-
-protected_branch() {
-  local branch="$1"
-  local protected=""
-  for protected in "${PROTECTED_BRANCHES[@]}"; do
-    [[ "$branch" == "$protected" ]] && return 0
-  done
-  return 1
-}
-
-git_operation() {
-  if [[ -d "$(git rev-parse --git-path rebase-merge)" || -d "$(git rev-parse --git-path rebase-apply)" ]]; then
-    printf "rebase\n"
-  elif [[ -f "$(git rev-parse --git-path MERGE_HEAD)" ]]; then
-    printf "merge\n"
-  elif [[ -f "$(git rev-parse --git-path CHERRY_PICK_HEAD)" ]]; then
-    printf "cherry-pick\n"
-  elif [[ -f "$(git rev-parse --git-path REVERT_HEAD)" ]]; then
-    printf "revert\n"
-  elif [[ -f "$(git rev-parse --git-path BISECT_LOG)" ]]; then
-    printf "bisect\n"
-  else
-    printf "none\n"
-  fi
-}
-
-has_conflicts() {
-  [[ -n "$(git diff --name-only --diff-filter=U)" ]]
-}
-
-show_conflicts() {
-  local files
-  files="$(git diff --name-only --diff-filter=U)"
-  if [[ -n "$files" ]]; then
-    warn "Arquivos com conflito:"
-    printf "%s\n" "$files"
-  else
-    ok "Nenhum conflito nao resolvido detectado."
-  fi
-}
-
-continue_operation() {
-  local op
-  op="$(git_operation)"
-
-  case "$op" in
-    rebase)
-      git rebase --continue
-      ;;
-    merge)
-      git merge --continue 2>/dev/null || git commit
-      ;;
-    cherry-pick)
-      git cherry-pick --continue
-      ;;
-    revert)
-      git revert --continue
-      ;;
-    bisect)
-      warn "Bisect em andamento. Use 'git bisect reset' quando terminar."
-      return 1
-      ;;
-    none)
-      ok "Nao ha operacao Git em andamento."
-      ;;
-  esac
-}
-
-abort_operation() {
-  local op
-  op="$(git_operation)"
-
-  case "$op" in
-    rebase)
-      git rebase --abort
-      ;;
-    merge)
-      git merge --abort 2>/dev/null || git reset --merge
-      ;;
-    cherry-pick)
-      git cherry-pick --abort
-      ;;
-    revert)
-      git revert --abort
-      ;;
-    bisect)
-      git bisect reset
-      ;;
-    none)
-      ok "Nao ha operacao Git em andamento."
-      ;;
-  esac
-}
-
-skip_operation() {
-  local op
-  op="$(git_operation)"
-
-  case "$op" in
-    rebase)
-      git rebase --skip
-      ;;
-    cherry-pick)
-      git cherry-pick --skip
-      ;;
-    revert)
-      git revert --skip
-      ;;
-    *)
-      warn "A operacao '${op}' nao suporta skip por este script."
-      return 1
-      ;;
-  esac
-}
-
-sensitive_file() {
-  local file="$1"
-  case "$file" in
-    .env|.env.*|*/.env|*/.env.*)
-      [[ "$file" == ".env.example" || "$file" == */.env.example ]] && return 1
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
-list_sensitive_status_files() {
-  local tmp
-  local file=""
-  tmp="$(mktemp)"
-
-  while IFS= read -r -d '' file; do
-    if sensitive_file "$file"; then
-      printf "%s\n" "$file" >> "$tmp"
-    fi
-  done < <(git ls-files -mo --exclude-standard -z)
-
-  while IFS= read -r -d '' file; do
-    if sensitive_file "$file"; then
-      printf "%s\n" "$file" >> "$tmp"
-    fi
-  done < <(git diff --cached --name-only -z)
-
-  sort -u "$tmp"
-  rm -f "$tmp"
-}
-
-unstage_sensitive_files() {
-  local file=""
-  while IFS= read -r -d '' file; do
-    if sensitive_file "$file"; then
-      git restore --staged -- "$file" 2>/dev/null || git reset -q -- "$file"
-      warn "Arquivo sensivel mantido fora do commit: ${file}"
-    fi
-  done < <(git diff --cached --name-only -z)
-}
-
-stage_all_safe() {
-  step "Adicionando alteracoes ao index"
-  git add -A
-  unstage_sensitive_files
-
-  if has_staged_changes; then
-    if ! git diff --cached --check; then
-      warn "Foram encontrados problemas de whitespace no diff staged."
-      confirm "Continuar mesmo assim? [s/N] " || return 1
-    fi
-  fi
-}
-
-operation_recovery_menu() {
-  local op=""
-  local opt=""
-
-  while true; do
-    op="$(git_operation)"
-    if [[ "$op" == "none" ]]; then
-      ok "Repositorio sem rebase/merge/cherry-pick/revert pendente."
-      return 0
-    fi
-
-    say ""
-    alert "Operacao Git em andamento: ${op}"
-    git status --short || true
-    show_conflicts
-
-    say ""
-    say "${BOLD}Recuperacao:${RESET}"
-    say "  1) Ver status completo"
-    say "  2) Stage seguro (sem .env) e continuar"
-    say "  3) Continuar operacao"
-    say "  4) Abortar operacao"
-    say "  5) Pular item atual (quando suportado)"
-    say "  0) Voltar"
-    read -r -p "Escolha: " opt
-
-    case "${opt:-}" in
-      1)
-        git status
-        ;;
-      2)
-        confirm "Rodar stage seguro e continuar '${op}'? [s/N] " || continue
-        if stage_all_safe && continue_operation; then
-          ok "Operacao continuada."
-        else
-          warn "A operacao ainda precisa de atencao."
-        fi
-        ;;
-      3)
-        if has_conflicts; then
-          warn "Ainda existem conflitos. Resolva os arquivos antes de continuar."
-          continue
-        fi
-        if continue_operation; then
-          ok "Operacao continuada."
-        else
-          warn "A operacao ainda precisa de atencao."
-        fi
-        ;;
-      4)
-        confirm "Abortar '${op}' e voltar ao estado anterior? [s/N] " || continue
-        abort_operation
-        ok "Operacao abortada."
-        ;;
-      5)
-        confirm "Pular o item atual de '${op}'? [s/N] " || continue
-        if skip_operation; then
-          ok "Item pulado."
-        else
-          warn "Nao foi possivel pular."
-        fi
-        ;;
-      0)
-        return 1
-        ;;
-      *)
-        warn "Opcao invalida."
-        ;;
-    esac
-  done
-}
-
-ensure_no_operation() {
-  local op
-  op="$(git_operation)"
-  if [[ "$op" == "none" ]]; then
-    return 0
-  fi
-
-  operation_recovery_menu || true
-  op="$(git_operation)"
-  if [[ "$op" != "none" ]]; then
-    warn "Ainda ha '${op}' em andamento. Parei para evitar perda de estado."
-    return 1
-  fi
-}
-
-has_staged_changes() {
-  ! git diff --cached --quiet --ignore-submodules
-}
-
-has_unstaged_changes() {
-  ! git diff --quiet --ignore-submodules
-}
-
-has_untracked_files() {
-  [[ -n "$(git ls-files --others --exclude-standard)" ]]
-}
-
-has_any_changes() {
-  has_staged_changes || has_unstaged_changes || has_untracked_files
-}
-
-commit_prefix_from_branch() {
-  local branch="$1"
-  local base="${branch##*/}"
-
-  if [[ "$base" =~ ^([A-Za-z]+-[0-9]+|[A-Za-z]+[0-9]+)([-_].*)?$ ]]; then
-    printf "%s - " "${BASH_REMATCH[1]}"
-  fi
-}
-
-print_repo_header() {
-  local branch="$1"
-  local remote_url=""
-
-  if [[ -n "${REMOTE:-}" ]]; then
-    remote_url="$(git remote get-url --push "$REMOTE" 2>/dev/null || true)"
-  fi
-
+# =====================[ Mensagem de commit ]=================
+if [[ -z "${MESSAGE}" && "${TOTAL_CHANGED}" -gt 0 ]]; then
   say ""
-  say "${BOLD}Repositorio:${RESET} $(basename "$REPO_ROOT")"
-  say "${BOLD}Branch atual:${RESET} ${BLUE}${branch}${RESET}"
-  if [[ -n "${REMOTE:-}" ]]; then
-    say "${BOLD}Remote:${RESET} ${REMOTE}  ${BOLD}URL:${RESET} ${remote_url}"
+  read -r -p "$(echo -e "${YELLOW}Digite a mensagem de commit (vazio = 'Auto commit'): ${RESET}")" MESSAGE || true
+  MESSAGE="${MESSAGE:-Auto commit}"
+fi
+
+FINAL_MESSAGE="${MESSAGE:-Auto commit}"
+if [[ -n "$COMMIT_PREFIX" && "$FINAL_MESSAGE" != "${COMMIT_PREFIX}"* ]]; then
+  FINAL_MESSAGE="${COMMIT_PREFIX}${FINAL_MESSAGE}"
+fi
+say ""
+step "Mensagem final do commit: ${BOLD}${FINAL_MESSAGE}${RESET}"
+
+# =====================[ Staging ]============================
+if [[ "${TOTAL_CHANGED}" -gt 0 ]]; then
+  step "Adicionar alterações ao index (git add .)"
+  if confirm "Adicionar tudo (git add .)? [s/N] "; then
+    git add .
+    ok "Arquivos adicionados ao index."
   else
-    warn "Sem remote configurado."
+    warn "Pulado 'git add '."
   fi
-}
+fi
 
-print_status_summary() {
-  say ""
-  step "Resumo de alteracoes"
-  git status --short
-
-  local sensitive
-  sensitive="$(list_sensitive_status_files)"
-  if [[ -n "$sensitive" ]]; then
-    say ""
-    warn "Arquivos .env detectados. Eles nao serao commitados:"
-    printf "%s\n" "$sensitive"
-  fi
-}
-
-ensure_upstream_for_branch() {
-  local branch="$1"
-  local upstream=""
-
-  upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
-  if [[ -n "$upstream" ]]; then
-    printf "%s\n" "$upstream"
-    return 0
-  fi
-
-  require_remote || return 1
-  if remote_branch_exists "$branch"; then
-    git fetch "$REMOTE" "refs/heads/${branch}:refs/remotes/${REMOTE}/${branch}" >/dev/null 2>&1 || true
-    git branch --set-upstream-to="${REMOTE}/${branch}" "$branch" >/dev/null
-    printf "%s/%s\n" "$REMOTE" "$branch"
-    return 0
-  fi
-
-  return 1
-}
-
-fetch_prune() {
-  require_remote || return 1
-  step "Sincronizando remote (${REMOTE})"
-  git fetch "$REMOTE" --prune
-}
-
-show_ahead_behind() {
-  local upstream=""
-  local counts=""
-  upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
-
-  say ""
-  step "Estado em relacao ao remote"
-  if [[ -z "$upstream" ]]; then
-    warn "Sem upstream configurado."
-    return 0
-  fi
-
-  counts="$(git rev-list --left-right --count "${upstream}...HEAD" 2>/dev/null || true)"
-  if [[ -z "$counts" ]]; then
-    warn "Nao foi possivel calcular ahead/behind."
-    return 0
-  fi
-
-  say "Upstream: ${upstream}"
-  say "Atras: $(awk '{print $1}' <<< "$counts") | A frente: $(awk '{print $2}' <<< "$counts")"
-}
-
-safe_pull_rebase() {
-  ensure_no_operation || return 1
-  require_remote || return 1
-
-  local branch=""
-  local upstream=""
-  branch="$(current_branch)"
-
-  fetch_prune || return 1
-  upstream="$(ensure_upstream_for_branch "$branch" || true)"
-  if [[ -z "$upstream" ]]; then
-    warn "Sem upstream. Pull/rebase pulado ate a branch ser publicada."
-    return 0
-  fi
-
-  step "Pull com rebase e autostash (${upstream})"
-  if git pull --rebase --autostash; then
-    ok "Sincronizacao concluida."
-    return 0
-  fi
-
-  alert "Pull/rebase interrompido."
-  operation_recovery_menu || true
-  return 1
-}
-
-safe_push() {
-  ensure_no_operation || return 1
-  require_remote || return 1
-
-  local branch=""
-  local upstream=""
-  branch="$(current_branch)"
-
-  if protected_branch "$branch"; then
-    alert "Voce esta na branch protegida '${branch}'."
-    confirm "Enviar para o remote mesmo assim? [s/N] " || return 1
-  fi
-
-  upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
-  if [[ -z "$upstream" ]]; then
-    step "Push com upstream para ${REMOTE}/${branch}"
-    if git push -u "$REMOTE" "$branch"; then
-      ok "Push concluido."
-      return 0
+# =====================[ Commit ]=============================
+if [[ "${TOTAL_CHANGED}" -gt 0 ]]; then
+  step "Commit"
+  if confirm "Fazer commit com mensagem acima? [s/N] "; then
+    set +e
+    git commit -m "${FINAL_MESSAGE}"
+    COMMIT_STATUS=$?
+    set -e
+    if [[ ${COMMIT_STATUS} -eq 0 ]]; then
+      ok "Commit criado."
+    else
+      warn "Nenhuma mudança para commitar (possivelmente index vazio)."
     fi
   else
-    step "Push para ${upstream}"
-    if git push; then
-      ok "Push concluido."
-      return 0
-    fi
+    warn "Pulado 'git commit'."
   fi
+fi
 
-  warn "Push falhou ou foi rejeitado."
-  confirm "Tentar fetch + rebase + novo push? [s/N] " || return 1
-  safe_pull_rebase || return 1
+# =====================[ Pull (antes do push)? ]==============
+say ""
+step "Sincronizar antes do push"
+if confirm "Deseja executar 'git pull --rebase --autostash' agora? [s/N] "; then
+  git pull --rebase --autostash "${REMOTE:-origin}" "${BRANCH}"
+  ok "Pull (rebase) concluído."
+else
+  warn "Pulado 'git pull --rebase --autostash'."
+fi
 
-  step "Tentando push novamente"
-  upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
-  if [[ -z "$upstream" ]]; then
-    if git push -u "$REMOTE" "$branch"; then
-      ok "Push concluido apos sincronizacao."
-      return 0
-    fi
-  else
-    if git push; then
-      ok "Push concluido apos sincronizacao."
-      return 0
-    fi
-  fi
+# Mostrar se há commits à frente/atrás
+say ""
+step "Estado em relação ao remoto"
+set +e
+AHEAD_BEHIND=$(git rev-list --left-right --count "${REMOTE:-origin}/${BRANCH}...${BRANCH}" 2>/dev/null)
+set -e
+if [[ -n "${AHEAD_BEHIND}" ]]; then
+  LEFT=$(echo "${AHEAD_BEHIND}" | awk '{print $1}')
+  RIGHT=$(echo "${AHEAD_BEHIND}" | awk '{print $2}')
+  say "Commits atrás do remoto: ${LEFT} | à frente: ${RIGHT}"
+else
+  warn "Não foi possível calcular ahead/behind."
+fi
 
-  alert "Push ainda falhou. Verifique permissao, protecao de branch ou conflitos remotos."
-  return 1
-}
-
+# =====================[ Checagem de Pull Request (GitHub) ]=====================
+# Tenta detectar owner/repo do GitHub a partir do origin
 parse_github_owner_repo() {
   local url="${1:-}"
-  local cleaned=""
-  cleaned="$url"
-  cleaned="${cleaned#git@github.com:}"
-  cleaned="${cleaned#ssh://git@github.com/}"
-  cleaned="${cleaned#https://github.com/}"
-  cleaned="${cleaned#http://github.com/}"
-  cleaned="${cleaned%.git}"
-
-  if [[ "$cleaned" == */* && "$cleaned" != "$url" ]]; then
-    printf "%s\n" "$cleaned"
+  # Formatos suportados:
+  #  - git@github.com:owner/repo.git
+  #  - https://github.com/owner/repo.git
+  #  - https://github.com/owner/repo
+  if [[ "$url" =~ github\.com[:/]+([^/]+)/([^.]+)(\.git)?$ ]]; then
+    echo "${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
+  else
+    echo ""
   fi
 }
 
 check_open_pr() {
-  local branch="$1"
-  local remote_url=""
-  local full_name=""
-  local api=""
-  local resp=""
-  local matches=""
-  local auth_header=()
-
-  [[ -n "${REMOTE:-}" ]] || return 0
-  remote_url="$(git remote get-url "$REMOTE" 2>/dev/null || true)"
-  full_name="$(parse_github_owner_repo "$remote_url")"
+  local remote_url; remote_url="$(git remote get-url "${REMOTE:-origin}" 2>/dev/null || true)"
+  local full_name; full_name="$(parse_github_owner_repo "$remote_url")"
 
   if [[ -z "$full_name" ]]; then
-    warn "Remote nao parece ser GitHub. Checagem de PR pulada."
+    warn "Host do remoto não é GitHub ou não foi possível detectar owner/repo. Pulando checagem de PR."
     return 0
   fi
 
-  if ! has_cmd curl || ! has_cmd jq; then
-    warn "curl/jq nao encontrados. Checagem de PR pulada."
+  if ! command -v curl >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+    warn "curl/jq não encontrados — não será possível checar PRs abertos."
     return 0
   fi
 
-  step "Verificando PRs abertos para ${full_name}:${branch}"
-  api="https://api.github.com/repos/${full_name}/pulls?state=open&per_page=100"
+  step "Verificando PRs abertos no GitHub para '${full_name}' (branch '${BRANCH}')..."
+  local api="https://api.github.com/repos/${full_name}/pulls?state=open&per_page=100"
+  local auth_header=()
   if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-    auth_header=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+    auth_header=(-H "Authorization: token ${GITHUB_TOKEN}")
   fi
 
-  resp="$(curl -fsS "${auth_header[@]}" "$api" 2>/dev/null || true)"
-  if [[ -z "$resp" ]]; then
-    warn "Falha ao consultar GitHub API. Checagem de PR pulada."
+  # Busca PRs abertos e filtra por branch head == BRANCH
+  local resp
+  set +e
+  resp=$(curl -s "${auth_header[@]}" "$api")
+  local curl_status=$?
+  set -e
+  if [[ $curl_status -ne 0 || -z "$resp" ]]; then
+    warn "Falha ao consultar GitHub API. Pulando checagem de PR."
     return 0
   fi
 
-  matches="$(jq --arg b "$branch" '[ .[] | select(.head.ref == $b) ]' <<< "$resp" 2>/dev/null || true)"
-  if [[ -z "$matches" ]]; then
-    warn "Resposta inesperada da GitHub API. Checagem de PR pulada."
-    return 0
-  fi
-
-  if jq -e 'length > 0' <<< "$matches" >/dev/null; then
-    alert "Ha PR aberto para '${branch}':"
-    jq -r '.[].html_url' <<< "$matches"
-    confirm "Prosseguir mesmo assim? [s/N] " || return 1
+  local matches
+  matches=$(echo "$resp" | jq --arg b "$BRANCH" '[ .[] | select(.head.ref == $b) ]')
+  if echo "$matches" | jq -e 'length > 0' >/dev/null; then
+    alert "Há Pull Request(s) aberto(s) para a branch '${BRANCH}':"
+    echo "$matches" | jq -r '.[].html_url'
+    if ! confirm "Prosseguir mesmo assim com merge/push? [s/N] "; then
+      die "Abortado por segurança (PR aberto encontrado)."
+    fi
   else
-    ok "Nenhum PR aberto encontrado para '${branch}'."
+    ok "Nenhum PR aberto encontrado para '${BRANCH}'."
   fi
 }
 
-main_ref() {
-  local main_branch="$1"
+# roda a checagem de PR antes de qualquer merge com a main
+check_open_pr
 
-  if [[ -n "${REMOTE:-}" ]] && git show-ref --verify --quiet "refs/remotes/${REMOTE}/${main_branch}"; then
-    printf "%s/%s\n" "$REMOTE" "$main_branch"
-  elif local_branch_exists "$main_branch"; then
-    printf "%s\n" "$main_branch"
-  else
-    return 1
-  fi
-}
-
-switch_to_branch() {
-  local branch="$1"
-  if git switch "$branch" 2>/dev/null; then
-    return 0
-  fi
-
-  git checkout "$branch"
-}
-
-ensure_clean_for_integration() {
-  if has_any_changes; then
-    warn "Existem alteracoes locais. Commit/stash antes de integrar com a branch principal."
-    git status --short
-    return 1
-  fi
-}
-
-integrate_with_main() {
-  ensure_no_operation || return 1
-  require_remote || return 1
-  ensure_clean_for_integration || return 1
-
-  local original_branch=""
-  local main_branch=""
-  local base_ref=""
-  local opt=""
-
-  original_branch="$(current_branch)"
-  main_branch="$(detect_main_branch)"
-
-  fetch_prune || return 1
-  base_ref="$(main_ref "$main_branch" || true)"
-  if [[ -z "$base_ref" ]]; then
-    warn "Nao encontrei '${main_branch}' local nem em ${REMOTE}."
-    return 1
-  fi
-
+# =====================[ Merge com main ]=====================
+merge_with_main() {
   say ""
-  step "Integracao com '${main_branch}'"
-  say "  1) Rebase da branch atual sobre ${base_ref}"
-  say "  2) Merge de ${base_ref} na branch atual"
-  say "  3) Merge da branch atual em ${main_branch}"
-  say "  0) Pular"
-  read -r -p "Escolha: " opt
+  step "Merge com '${MAIN_BRANCH}'"
+  echo "1) Trazer '${MAIN_BRANCH}' para a sua branch atual (${BRANCH})"
+  echo "2) Enviar sua branch (${BRANCH}) para '${MAIN_BRANCH}'"
+  read -r -p "Escolha [1/2]: " MERGE_OPT
 
-  case "${opt:-}" in
+  case "${MERGE_OPT}" in
     1)
-      if [[ "$original_branch" == "$main_branch" ]]; then
-        warn "Voce ja esta em '${main_branch}'."
-        return 0
+      step "Atualizando '${MAIN_BRANCH}' local e mesclando na sua branch"
+      git fetch "${REMOTE:-origin}" --prune
+      git checkout "${MAIN_BRANCH}"
+      git pull --ff-only "${REMOTE:-origin}" "${MAIN_BRANCH}"
+      git checkout "${BRANCH}"
+      set +e; git merge --no-ff "${MAIN_BRANCH}"; MERGE_STATUS=$?; set -e
+      if [[ ${MERGE_STATUS} -ne 0 ]]; then
+        alert "Conflitos detectados. Resolva, faça commit e rode novamente."
+        exit 1
       fi
-      step "Rebase de '${original_branch}' sobre '${base_ref}'"
-      if git rebase "$base_ref"; then
-        ok "Rebase concluido."
-      else
-        alert "Rebase interrompido por conflito."
-        operation_recovery_menu || true
-        return 1
-      fi
+      ok "Merge de '${MAIN_BRANCH}' → '${BRANCH}' concluído."
       ;;
     2)
-      if [[ "$original_branch" == "$main_branch" ]]; then
-        warn "Voce ja esta em '${main_branch}'."
-        return 0
+      if [[ "${BRANCH}" == "${MAIN_BRANCH}" ]]; then
+        warn "Você já está em '${MAIN_BRANCH}'."
+        return
       fi
-      step "Merge de '${base_ref}' em '${original_branch}'"
-      if git merge --no-ff "$base_ref"; then
-        ok "Merge concluido."
-      else
-        alert "Merge interrompido por conflito."
-        operation_recovery_menu || true
-        return 1
+      step "Mesclando '${BRANCH}' em '${MAIN_BRANCH}'"
+      git fetch "${REMOTE:-origin}" --prune
+      git checkout "${MAIN_BRANCH}"
+      git pull --ff-only "${REMOTE:-origin}" "${MAIN_BRANCH}"
+      set +e; git merge --no-ff "${BRANCH}"; MERGE_STATUS=$?; set -e
+      if [[ ${MERGE_STATUS} -ne 0 ]]; then
+        alert "Conflitos detectados ao mesclar '${BRANCH}' em '${MAIN_BRANCH}'."
+        exit 1
       fi
-      ;;
-    3)
-      if [[ "$original_branch" == "$main_branch" ]]; then
-        warn "Voce ja esta em '${main_branch}'."
-        return 0
+      if confirm "Push de '${MAIN_BRANCH}' para ${REMOTE:-origin}? [s/N] "; then
+        git push "${REMOTE:-origin}" "${MAIN_BRANCH}"
+        ok "Push de '${MAIN_BRANCH}' concluído."
       fi
-      check_open_pr "$original_branch" || return 1
-      alert "Isto mesclara '${original_branch}' em '${main_branch}'."
-      confirm "Confirmar merge na branch principal? [s/N] " || return 1
-
-      if ! local_branch_exists "$main_branch"; then
-        if remote_branch_exists "$main_branch"; then
-          git switch -c "$main_branch" --track "${REMOTE}/${main_branch}" 2>/dev/null || git checkout -t "${REMOTE}/${main_branch}"
-        else
-          warn "Branch principal '${main_branch}' nao encontrada."
-          return 1
-        fi
-      else
-        switch_to_branch "$main_branch"
-      fi
-
-      git pull --ff-only "$REMOTE" "$main_branch" || return 1
-      if git merge --no-ff "$original_branch"; then
-        ok "Merge em '${main_branch}' concluido."
-      else
-        alert "Conflitos ao mesclar em '${main_branch}'. Resolva antes de voltar."
-        operation_recovery_menu || true
-        return 1
-      fi
-
-      if confirm_yes "Push de '${main_branch}' para ${REMOTE}? [S/n] "; then
-        git push "$REMOTE" "$main_branch"
-        ok "Branch principal enviada."
-      fi
-
-      switch_to_branch "$original_branch"
-      ok "Retornado para '${original_branch}'."
-      ;;
-    0)
-      warn "Integracao pulada."
+      git checkout "${BRANCH}"
+      ok "Retornado para '${BRANCH}'."
       ;;
     *)
-      warn "Opcao invalida."
+      warn "Opção inválida."
       ;;
   esac
 }
 
-create_commit_if_needed() {
-  local branch="$1"
-  local message="$2"
-  local prefix=""
-  local final_message=""
-
-  if ! has_any_changes; then
-    warn "Nenhuma alteracao detectada no working tree/index."
-    confirm "Continuar apenas com sincronizacao/push? [s/N] " || return 1
-    return 0
-  fi
-
-  if [[ -z "$message" ]]; then
-    say ""
-    read -r -p "$(printf "%b" "${YELLOW}Mensagem de commit (vazio = 'Auto commit'): ${RESET}")" message || true
-    message="${message:-Auto commit}"
-  fi
-
-  prefix="$(commit_prefix_from_branch "$branch")"
-  final_message="$message"
-  if [[ -n "$prefix" && "$final_message" != "$prefix"* ]]; then
-    final_message="${prefix}${final_message}"
-  fi
-
-  say ""
-  step "Mensagem final: ${BOLD}${final_message}${RESET}"
-
-  if confirm_yes "Adicionar tudo com protecao de .env? [S/n] "; then
-    stage_all_safe || return 1
-  else
-    warn "Stage automatico pulado. Usarei apenas o que ja estiver staged."
-    unstage_sensitive_files
-  fi
-
-  if ! has_staged_changes; then
-    warn "Nao ha alteracoes staged para commit."
-    return 0
-  fi
-
-  if ! confirm_yes "Criar commit com essa mensagem? [S/n] "; then
-    warn "Commit pulado."
-    return 0
-  fi
-
-  step "Criando commit"
-  if git commit -m "$final_message"; then
-    ok "Commit criado."
-  else
-    alert "Commit falhou. Verifique hooks, conflitos ou arquivos staged."
-    return 1
-  fi
-}
-
-# ==== Fluxo principal ====
-ensure_no_operation || die "Resolva a operacao Git pendente antes de continuar."
-ensure_named_branch || die "Branch nomeada e obrigatoria para este fluxo."
-
-BRANCH="$(current_branch)"
-MAIN_BRANCH="$(detect_main_branch)"
-
-print_repo_header "$BRANCH"
-
-if protected_branch "$BRANCH"; then
-  alert "Voce esta na branch protegida: ${BRANCH}"
-  confirm "Tem certeza que deseja commitar/push nessa branch? [s/N] " || die "Operacao abortada."
-fi
-
-print_status_summary
-create_commit_if_needed "$BRANCH" "$MESSAGE" || die "Fluxo de commit interrompido."
-
 say ""
-if confirm_yes "Sincronizar com upstream antes do push? [S/n] "; then
-  safe_pull_rebase || die "Sincronizacao interrompida."
+step "Integração com ${MAIN_BRANCH}"
+if confirm "Deseja realizar um merge com '${MAIN_BRANCH}' agora? [s/N] "; then
+  merge_with_main
 else
-  warn "Sincronizacao pulada."
+  warn "Merge com '${MAIN_BRANCH}' pulado."
 fi
 
-show_ahead_behind
-
+# =====================[ Push ]===============================
 say ""
-if confirm "Integrar com '${MAIN_BRANCH}' agora? [s/N] "; then
-  integrate_with_main || die "Integracao interrompida."
+step "Enviar alterações (push)"
+if confirm "Executar 'git push ${REMOTE:-origin} ${BRANCH}'? [s/N] "; then
+  git push "${REMOTE:-origin}" "${BRANCH}"
+  ok "Push concluído."
 else
-  warn "Integracao com '${MAIN_BRANCH}' pulada."
+  warn "Pulado 'git push'."
 fi
 
-BRANCH="$(current_branch)"
+# =====================[ Pull final opcional ]================
 say ""
-if confirm_yes "Executar push da branch atual (${BRANCH})? [S/n] "; then
-  safe_push || die "Push interrompido."
+step "Atualizar local após push (opcional)"
+if confirm "Deseja executar um 'git pull' final para garantir sincronização? [s/N] "; then
+  git pull "${REMOTE:-origin}" "${BRANCH}"
+  ok "Pull final concluído."
 else
-  warn "Push pulado."
+  warn "Pulado 'git pull' final."
 fi
 
 say ""
-if confirm "Executar pull final --ff-only para conferir sincronizacao? [s/N] "; then
-  if git pull --ff-only; then
-    ok "Pull final concluido."
-  else
-    warn "Pull final nao foi fast-forward. Nenhum merge automatico foi criado."
-  fi
-else
-  warn "Pull final pulado."
-fi
-
-say ""
-ok "Fluxo encerrado na branch $(display_branch)."
+ok "Fluxo encerrado na branch ${BRANCH}."
