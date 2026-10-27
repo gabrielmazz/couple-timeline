@@ -1,4 +1,4 @@
-import { Alert, Button, Group, Image, Loader, Modal, Stack, Text } from '@mantine/core'
+import { Alert, Button, Group, Image, Loader, Modal, Stack, Text, Title } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
 import { useContextMenu } from 'mantine-contextmenu'
 import { CalendarHeart, Copy, Download, FlipHorizontal, FlipVertical, Plus } from 'lucide-react'
@@ -9,9 +9,6 @@ import type { TimelineEventWithPhotos, TimelineFilters } from '../../types/timel
 import { TimelineCard } from './TimelineCard'
 import { TimelineEventModal } from './TimelineEventModal'
 import { TimelineYearSelector } from './TimelineYearSelector'
-
-import BlurText from '../ui/BlurText'
-import CSSBlurText from './../../components/ui/BlurText.module.css'
 
 type PhotoPreview = {
 	src: string
@@ -261,13 +258,7 @@ export function TimelineView({
 					<Text c="var(--palette-blush)" fw={800} tt="uppercase" size="xs">
 						Timeline {couple.visibility === 'public' ? 'pública' : 'privada'}
 					</Text>
-					<BlurText
-						text={couple.name}
-						delay={250}
-						animateBy="words"
-						direction="top"
-						className={CSSBlurText.titleBlurTextTimeLineCouple}
-					/>
+					<Title order={1}>{couple.name}</Title>
 				</Stack>
 				{canEdit ? (
 					<Button
@@ -302,9 +293,11 @@ export function TimelineView({
 					color="pink"
 					radius={8}
 					icon={<CalendarHeart size={20} />}
-					title="Nenhum momento cadastrado"
+					title={filters.year !== null || filters.month !== null ? 'Nenhum momento neste período' : 'Nenhum momento cadastrado'}
 				>
-					{canEdit
+					{filters.year !== null || filters.month !== null
+						? 'Ajuste os filtros para ver outros momentos.'
+						: canEdit
 						? 'Crie o primeiro evento para começar a linha do tempo.'
 						: 'Esta timeline ainda não possui eventos públicos.'}
 				</Alert>
@@ -338,6 +331,13 @@ export function TimelineView({
 				<Alert color="red" radius={8} title="Não foi possível carregar os próximos momentos">
 					{loadMoreError}
 				</Alert>
+			) : null}
+			{hasMore && events.length > 0 ? (
+				<Group justify="center">
+					<Button variant="light" color="pink" loading={isLoadingMore} onClick={onLoadMore}>
+						{loadMoreError ? 'Tentar novamente' : 'Carregar mais momentos'}
+					</Button>
+				</Group>
 			) : null}
 
 			<TimelineEventModal

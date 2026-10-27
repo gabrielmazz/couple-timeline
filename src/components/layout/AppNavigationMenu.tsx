@@ -1,5 +1,6 @@
 import { notifications } from '@mantine/notifications'
-import { Heart } from 'lucide-react'
+import { BookOpen, Menu as MenuIcon } from 'lucide-react'
+import { Button, Drawer } from '@mantine/core'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/auth-context'
@@ -7,13 +8,13 @@ import { signOut } from 'firebase/auth'
 import { firebaseAuth } from '../../lib/firebase/client'
 import { getUserTimelineTree } from '../../lib/timeline/queries'
 import type { TimelineTree } from '../../types/timeline'
-import StaggeredMenu, { type StaggeredMenuItem } from '../ui/StaggeredMenu'
+
 
 function AppMenuLogo() {
 	return (
 		<Link to="/" className="app-menu-logo" aria-label="Ir para a página inicial">
-			<Heart size={22} color="var(--palette-rose)" fill="var(--palette-rose)" />
-			<span>Moments</span>
+			<BookOpen size={21} aria-hidden="true" />
+			<span>Couple Timeline</span>
 		</Link>
 	)
 }
@@ -22,6 +23,7 @@ export function AppNavigationMenu() {
 	const { user } = useAuth()
 	const location = useLocation()
 	const navigate = useNavigate()
+	const [menuOpen, setMenuOpen] = useState(false)
 	const [timelineTreeState, setTimelineTreeState] = useState<{
 		userId: string
 		tree: TimelineTree | null
@@ -74,73 +76,52 @@ export function AppNavigationMenu() {
 		? `/timeline/${timelineTree.root.id}`
 		: currentTimelinePath ?? '/dashboard'
 
-	const createMenuItem = (label: string, ariaLabel: string, link: string): StaggeredMenuItem => ({
-		label,
-		ariaLabel,
-		link,
-		isActive: label === 'Timeline'
-			? location.pathname.startsWith('/timeline/')
-			: label === 'Mini games'
-				? location.pathname.startsWith('/jogos')
-			: location.pathname === link,
-		onClick: (event) => {
-			event.preventDefault()
-			navigate(link)
-		},
-	})
-
-	const menuItems: StaggeredMenuItem[] = !user
+	const menuItems = !user
 		? [
-			createMenuItem('Home', 'Ir para a página inicial', '/'),
-			createMenuItem('Entrar', 'Ir para a página de login', '/login'),
-			createMenuItem('Criar conta', 'Ir para a página de cadastro', '/register'),
+			{ label: 'Entrar', link: '/login' },
+			{ label: 'Criar conta', link: '/register' },
 		]
 		: [
-			createMenuItem('Home', 'Ir para a página inicial', '/'),
-			createMenuItem('Árvores', 'Ir para o dashboard', '/dashboard'),
-			createMenuItem('Timeline', 'Ir para a timeline principal', timelinePath),
-			createMenuItem('Presentes', 'Ir para a lista de presentes', '/presentes'),
-			createMenuItem('Calendário', 'Ir para o calendário do casal', '/calendario'),
-			createMenuItem('Planos do mês', 'Ir para os planos do mês', '/planos-do-mes'),
-			createMenuItem('Futuro', 'Ir para os planos do casal', '/futuro'),
-			createMenuItem('Mini games', 'Abrir os mini games do casal', '/jogos'),
-			createMenuItem('Perfil', 'Ir para o perfil', '/perfil'),
-			{
-				label: 'Sair',
-				ariaLabel: 'Sair da conta',
-				onClick: (event) => {
-					event.preventDefault()
-					void handleLogout()
-				},
-			},
+			{ label: 'Início', link: '/dashboard' },
+			{ label: 'Linha do tempo', link: timelinePath },
+			{ label: 'Calendário', link: '/calendario' },
+			{ label: 'Planos do mês', link: '/planos-do-mes' },
+			{ label: 'Momentos futuros', link: '/futuro' },
+			{ label: 'Presentes', link: '/presentes' },
+			{ label: 'Jogos', link: '/jogos' },
+			{ label: 'Perfil', link: '/perfil' },
 		]
+
+	function isActive(item: { label: string; link: string }) {
+		return item.label === 'Linha do tempo'
+			? location.pathname.startsWith('/timeline/')
+			: item.label === 'Jogos' ? location.pathname.startsWith('/jogos') : location.pathname === item.link
+	}
 
 	return (
 		<>
-			<StaggeredMenu
-				className="app-navigation-menu"
-				isFixed
-				logo={<AppMenuLogo />}
-				items={menuItems}
-				socialItems={[]}
-				displaySocials={false}
-				displayItemNumbering
-				colors={['#e23d75', '#feb89f', '#2a1227']}
-				accentColor="var(--palette-rose)"
-				menuButtonColor="#fff7f4"
-				openMenuButtonColor="#fff7f4"
-			/>
-			<style>{`
-				.app-navigation-menu .sm-panel-item {
-					font-size: clamp(2.6rem, 4.2vw, 4.2rem);
-				}
-
-				@media (max-width: 640px) {
-					.app-navigation-menu .sm-panel-item {
-						font-size: clamp(2.2rem, 12vw, 3.6rem);
-					}
-				}
-			`}</style>
+			<header className="app-nav-header">
+				<div className="app-nav-inner">
+					<AppMenuLogo />
+					<nav className="app-nav-primary" aria-label="Acesso rápido">
+						{menuItems.slice(0, user ? 4 : 2).map((item) => (
+							<Link key={item.label} to={item.link} aria-current={isActive(item) ? 'page' : undefined}>{item.label}</Link>
+						))}
+					</nav>
+					<Button variant="subtle" className="app-nav-toggle" onClick={() => setMenuOpen(true)} aria-label="Abrir menu de navegação" aria-expanded={menuOpen} leftSection={<MenuIcon size={19} aria-hidden="true" />}>
+						Menu
+					</Button>
+				</div>
+			</header>
+			<Drawer opened={menuOpen} onClose={() => setMenuOpen(false)} position="right" title="Navegação" size="sm" classNames={{ content: 'app-nav-drawer', title: 'app-nav-drawer-title' }}>
+				<nav className="app-nav-links" aria-label="Navegação principal">
+					{menuItems.map((item) => {
+						const active = isActive(item)
+						return <Link key={item.label} to={item.link} onClick={() => setMenuOpen(false)} aria-current={active ? 'page' : undefined}>{item.label}</Link>
+					})}
+					{user && <button type="button" onClick={() => { setMenuOpen(false); void handleLogout() }}>Sair da conta</button>}
+				</nav>
+			</Drawer>
 		</>
 	)
 }

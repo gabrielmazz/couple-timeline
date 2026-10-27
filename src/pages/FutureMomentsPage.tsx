@@ -486,14 +486,12 @@ export function FutureMomentsPage() {
                 <Sparkles size={25} />
               </ThemeIcon>
               <Title order={2} size="h3">
-                Ainda há espaço para o próximo sonho
+                {activeFilter === 'all' ? 'Ainda há espaço para o próximo sonho' : 'Nenhum plano neste estado'}
               </Title>
               <Text c="dimmed" maw={460}>
-                Adicionem uma viagem, um restaurante ou uma meta. O plano de hoje pode virar a melhor história de amanhã.
+                {activeFilter === 'all' ? 'Adicionem uma viagem, um restaurante ou uma meta. O plano de hoje pode virar a melhor história de amanhã.' : 'Escolha outro filtro para ver os demais planos.'}
               </Text>
-              <Button color="pink" leftSection={<Plus size={17} />} onClick={openCreateForm}>
-                Adicionar primeiro plano
-              </Button>
+              {activeFilter === 'all' ? <Button color="pink" leftSection={<Plus size={17} />} onClick={openCreateForm}>Adicionar primeiro plano</Button> : <Button variant="light" color="pink" onClick={() => setActiveFilter('all')}>Ver todos os planos</Button>}
             </Stack>
           </Card>
         ) : (

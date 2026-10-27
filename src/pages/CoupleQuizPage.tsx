@@ -221,6 +221,7 @@ export function CoupleQuizPage() {
 	}
 
 	function handleNewGame() {
+		if (session && session.phase !== 'finished' && !window.confirm('Encerrar esta partida e começar outra?')) return
 		dispatch({ type: 'reset' })
 		form.reset()
 	}
@@ -561,7 +562,7 @@ export function CoupleQuizPage() {
 		return (
 			<Container size="lg" py={{ base: 'lg', sm: 'xl' }}>
 				<Stack className="quiz-page" gap="xl">
-					<Button component={Link} to="/jogos" variant="subtle" color="pink" leftSection={<ArrowLeft size={16} aria-hidden="true" />}>Mini games</Button>
+					<Button component={Link} to="/jogos" variant="subtle" color="pink" leftSection={<ArrowLeft size={16} aria-hidden="true" />}>Voltar aos jogos</Button>
 					<Group justify="center" py={96}><Loader color="pink" /><Text c="dimmed">Preparando as perguntas de vocês…</Text></Group>
 				</Stack>
 			</Container>
@@ -572,7 +573,7 @@ export function CoupleQuizPage() {
 		return (
 			<Container size="lg" py={{ base: 'lg', sm: 'xl' }}>
 				<Stack className="quiz-page" gap="xl">
-					<Button component={Link} to="/jogos" variant="subtle" color="pink" leftSection={<ArrowLeft size={16} aria-hidden="true" />}>Mini games</Button>
+					<Button component={Link} to="/jogos" variant="subtle" color="pink" leftSection={<ArrowLeft size={16} aria-hidden="true" />}>Voltar aos jogos</Button>
 							<Card className="quiz-error-card glass-panel" radius={8} withBorder>
 								<Stack align="center" gap="md">
 									<Alert color="red" variant="light" title="Não foi possível preparar o Quiz">{error ?? 'Crie ou abra uma timeline principal antes de jogar.'}</Alert>
@@ -607,7 +608,7 @@ export function CoupleQuizPage() {
 		<Container size="lg" py={{ base: 'lg', sm: 'xl' }}>
 			<Stack className="quiz-page" gap="xl">
 				<Group justify="space-between" align="center" gap="md">
-					<Button component={Link} to="/jogos" variant="subtle" color="pink" leftSection={<ArrowLeft size={16} aria-hidden="true" />}>Mini games</Button>
+					<Button component={Link} to="/jogos" variant="subtle" color="pink" leftSection={<ArrowLeft size={16} aria-hidden="true" />}>Voltar aos jogos</Button>
 					{session ? <Button variant="subtle" color="gray" onClick={handleNewGame} leftSection={<RefreshCcw size={16} aria-hidden="true" />}>Nova partida</Button> : null}
 				</Group>
 

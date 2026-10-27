@@ -42,7 +42,7 @@ export function TimelineYearSelector({
 	if (years.length === 0) return null
 
 	return (
-		<Group grow align="flex-end" gap="md">
+		<Group className="timeline-filters" grow align="flex-end" gap="md">
 			<Select
 				label="Ano"
 				data={[

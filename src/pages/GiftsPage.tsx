@@ -427,6 +427,7 @@ export function GiftsPage() {
       <Container size="lg" py="xl">
         <Alert color="red" title="Erro ao carregar presentes">
           {error}
+          <Button mt="sm" variant="light" color="red" onClick={() => void load()}>Tentar novamente</Button>
         </Alert>
       </Container>
     )

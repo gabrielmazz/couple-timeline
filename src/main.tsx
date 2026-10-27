@@ -37,8 +37,8 @@ const theme = createTheme({
   defaultRadius: 8,
   fontFamily: 'var(--app-font-family)',
   headings: {
-    fontFamily: 'var(--app-font-family)',
-    fontWeight: '700',
+    fontFamily: 'var(--app-heading-font)',
+    fontWeight: '400',
   },
   components: {
     Badge: Badge.extend({
@@ -71,6 +71,7 @@ const theme = createTheme({
     PasswordInput: PasswordInput.extend({
       defaultProps: {
         radius: 'sm',
+        visibilityToggleButtonProps: { 'aria-label': 'Mostrar ou ocultar senha' },
       },
     }),
     SegmentedControl: SegmentedControl.extend({
@@ -112,16 +113,8 @@ const theme = createTheme({
   },
   colors: {
     pink: [
-      '#fff1ed',
-      '#ffe1d8',
-      '#fdcfbf',
-      '#feb89f',
-      '#f58aa4',
-      '#e23d75',
-      '#c72665',
-      '#9e1b57',
-      '#742365',
-      '#5f0d3b',
+      '#fff0f8', '#f7dce9', '#eebed7', '#e4a0c4', '#d782b0',
+      '#c7669c', '#b34e88', '#923a6e', '#752e58', '#592343',
     ],
   },
 })

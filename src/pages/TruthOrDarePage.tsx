@@ -280,6 +280,7 @@ export function TruthOrDarePage() {
 	}
 
 	const handleNewGame = () => {
+		if (phase === 'playing' && session && session.timeLeft > 0 && !window.confirm('Encerrar esta partida e começar outra?')) return
 		setSession(null)
 		setPhase('setup')
 	}
@@ -294,7 +295,7 @@ export function TruthOrDarePage() {
 			<Stack className="truth-or-dare-page" gap="xl">
 				<Group justify="space-between" align="center" gap="md">
 					<Button component={Link} to="/jogos" variant="subtle" color="pink" leftSection={<ArrowLeft size={16} aria-hidden="true" />}>
-						Mini games
+						Voltar aos jogos
 					</Button>
 					{effectivePhase !== 'setup' ? (
 						<Button variant="subtle" color="gray" onClick={handleNewGame} leftSection={<RefreshCcw size={16} aria-hidden="true" />}>

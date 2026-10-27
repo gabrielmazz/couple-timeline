@@ -188,6 +188,7 @@ export function ProfilePage() {
         ) : error ? (
           <Alert color="red" radius={8} title="Erro ao carregar perfil">
             {error}
+            <Button mt="sm" variant="light" color="red" onClick={() => void loadProfile()}>Tentar novamente</Button>
           </Alert>
         ) : data ? (
           <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">

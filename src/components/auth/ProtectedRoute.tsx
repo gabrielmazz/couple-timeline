@@ -9,7 +9,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (loading) {
     return (
       <Center mih="55vh">
-        <Loader color="pink" />
+        <Loader color="pink" aria-label="Verificando acesso" />
       </Center>
     )
   }

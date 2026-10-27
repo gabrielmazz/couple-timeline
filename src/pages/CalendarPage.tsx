@@ -455,6 +455,7 @@ export function CalendarPage() {
       <Container size="lg" py="xl">
         <Alert color="red" radius={8} title="Calendário indisponível">
           {error}
+          <Button mt="sm" variant="light" color="red" onClick={() => void loadCalendar()}>Tentar novamente</Button>
         </Alert>
         <Button mt="md" component={Link} to="/dashboard" variant="light" color="pink">
           Voltar ao dashboard
@@ -531,7 +532,7 @@ export function CalendarPage() {
               <div>
                 <Text fw={800}>O próximo capítulo começa com vocês.</Text>
                 <Text c="dimmed" size="sm">
-                  Adicione uma viagem, reserva ou data especial para criar a próxima contagem regressiva.
+                  {data.canEdit ? 'Adicione uma viagem, reserva ou data especial para criar a próxima contagem regressiva.' : 'Quando houver uma data futura, ela aparecerá aqui.'}
                 </Text>
               </div>
             </Group>
