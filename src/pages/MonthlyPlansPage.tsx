@@ -42,7 +42,6 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../components/auth/auth-context'
-import { CityAutocomplete } from '../components/ui/city-autocomplete'
 import { Map, MapMarker, MarkerContent, MarkerLabel, MarkerTooltip, useMap } from '../components/ui/mapcn-marker-content'
 import {
   addMonthlyPlanToCalendar,
@@ -54,17 +53,18 @@ import {
   updateMonthlyPlan,
   updateMonthlyPlanStatus,
 } from '../lib/plans/actions'
-import { fetchCitySuggestions, fetchPlaceSuggestions } from '../lib/plans/api'
+import { fetchPlaceSuggestions } from '../lib/plans/api'
 import { pickInternalCoupleIdea } from '../lib/plans/ideaDeck'
 import { fetchMonthlyPlansPage, formatMonthLabel, getMonthStartIso, getNextMonthStart, getPreviousMonthStart } from '../lib/plans/queries'
 import { useCurrentLocation } from '../lib/plans/useCurrentLocation'
 import { rankPlaceSuggestions } from '../lib/plans/ranking'
+import './monthly-plans.css'
 import { collection, onSnapshot, query, where } from 'firebase/firestore'
 import { firestore } from '../lib/firebase/client'
 import { getUserTimelineTree } from '../lib/timeline/queries'
 import { getErrorMessage } from '../lib/utils'
 import type { CoupleMonthlyPlan, MonthlyPlanCategory, MonthlyPlanSource, MonthlyPlanStatus } from '../types/database'
-import { monthlyPlanCategories, monthlyPlanStatuses, type CitySuggestion, type MonthlyPlanFormValues, type PlaceSuggestion, type SuggestionsResponse } from '../types/plans'
+import { monthlyPlanCategories, monthlyPlanStatuses, type MonthlyPlanFormValues, type PlaceSuggestion, type SuggestionsResponse } from '../types/plans'
 
 const initialFormValues: MonthlyPlanFormValues = {
   title: '',
@@ -75,7 +75,7 @@ const initialFormValues: MonthlyPlanFormValues = {
   locationName: '',
 }
 
-const discoveryCategoryValues = monthlyPlanCategories.map((category) => category.value)
+const discoveryCategoryValues: MonthlyPlanCategory[] = ['Restaurante', 'Café', 'Parque', 'Atividade']
 
 const statusColors: Record<MonthlyPlanStatus, string> = {
   idea: 'yellow',
@@ -108,7 +108,7 @@ function weatherLabel(weatherCode: number | null) {
   return 'Condições instáveis'
 }
 
-function MapBoundsToItems({ items }: { items: MapPlanItem[] }) {
+function MapBoundsToItems({ items, activeId }: { items: MapPlanItem[]; activeId?: string | null }) {
   const { map, isLoaded } = useMap()
   const previousSignature = useRef('')
 
@@ -134,6 +134,12 @@ function MapBoundsToItems({ items }: { items: MapPlanItem[] }) {
     )
   }, [isLoaded, items, map])
 
+  useEffect(() => {
+    if (!map || !isLoaded || !activeId) return
+    const selected = items.find((item) => item.id === activeId)
+    if (selected) map.easeTo({ center: [selected.longitude, selected.latitude], zoom: Math.max(map.getZoom(), 14), duration: 350 })
+  }, [activeId, isLoaded, items, map])
+
   return null
 }
 
@@ -158,7 +164,7 @@ function PlanMap({ items, fallbackCenter, activeId, onSelect }: { items: MapPlan
   return (
     <div className="monthly-plans-map-shell">
       <Map center={center} zoom={12} className="monthly-plans-map">
-        <MapBoundsToItems items={items} />
+        <MapBoundsToItems items={items} activeId={activeId} />
         {items.map((item) => (
           <MapMarker key={item.id} longitude={item.longitude} latitude={item.latitude} ariaLabel={`Abrir detalhes de ${item.name}`} onClick={() => onSelect?.(item.id)}>
             <MarkerContent className={`${item.isSaved ? 'monthly-map-marker monthly-map-marker-saved' : 'monthly-map-marker'}${activeId === item.id ? ' monthly-map-marker-active' : ''}`}>
@@ -295,6 +301,12 @@ export function MonthlyPlansPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<MonthlyPlanStatus | 'all'>('all')
+  const [savingPlaceId, setSavingPlaceId] = useState<string | null>(null)
+  const savingRef = useRef(false)
+  const placeSavingRef = useRef(false)
+  const loadVersion = useRef(0)
   const [formOpened, setFormOpened] = useState(false)
   const [editingPlan, setEditingPlan] = useState<CoupleMonthlyPlan | null>(null)
   const [formSource, setFormSource] = useState<MonthlyPlanSource>('manual')
@@ -308,12 +320,8 @@ export function MonthlyPlansPage() {
   const [discoverResult, setDiscoverResult] = useState<SuggestionsResponse | null>(null)
   const [discoverLoading, setDiscoverLoading] = useState(false)
   const [discoverError, setDiscoverError] = useState<string | null>(null)
-  const [citySuggestions, setCitySuggestions] = useState<CitySuggestion[]>([])
-  const [citySuggestionsLoading, setCitySuggestionsLoading] = useState(false)
-  const [selectedCity, setSelectedCity] = useState<CitySuggestion | null>(null)
   const [activeMapId, setActiveMapId] = useState<string | null>(null)
   const discoverAbortRef = useRef<AbortController | null>(null)
-  const citySuggestAbortRef = useRef<AbortController | null>(null)
   const location = useCurrentLocation()
   const form = useForm<MonthlyPlanFormValues>({
     initialValues: initialFormValues,
@@ -328,6 +336,7 @@ export function MonthlyPlansPage() {
   })
 
   const load = useCallback(async (showLoader = true) => {
+    const version = ++loadVersion.current
     if (showLoader) setLoading(true)
     setError(null)
 
@@ -336,12 +345,13 @@ export function MonthlyPlansPage() {
       if (!tree) throw new Error('Crie uma timeline ou vincule seu par antes de planejar o mês.')
 
       const pageData = await fetchMonthlyPlansPage(tree.root.id, selectedMonth)
+      if (version !== loadVersion.current) return
       setCoupleId(tree.root.id)
       setPlans(pageData.plans)
     } catch (loadError) {
-      setError(getErrorMessage(loadError, 'Não foi possível carregar os planos deste mês.'))
+      if (version === loadVersion.current) setError(getErrorMessage(loadError, 'Não foi possível carregar os planos deste mês.'))
     } finally {
-      if (showLoader) setLoading(false)
+      if (version === loadVersion.current) setLoading(false)
     }
   }, [selectedMonth])
 
@@ -350,49 +360,14 @@ export function MonthlyPlansPage() {
       void load()
     }, 0)
 
-    return () => window.clearTimeout(timer)
+    return () => { window.clearTimeout(timer); loadVersion.current += 1 }
   }, [load])
 
   useEffect(() => {
     if (!coupleId) return
 
-    return onSnapshot(query(collection(firestore, 'couple_monthly_plans'), where('couple_id', '==', coupleId)), () => void load(false))
+    return onSnapshot(query(collection(firestore, 'couple_monthly_plans'), where('couple_id', '==', coupleId)), () => void load(false), () => setError('Não foi possível atualizar os planos em tempo real. Tente recarregar a página.'))
   }, [coupleId, load])
-
-  useEffect(() => {
-    const query = discoverCity.trim()
-    const timer = window.setTimeout(() => {
-      if (!discoverOpened || !coupleId || query.length < 2 || selectedCity?.label === query) {
-        citySuggestAbortRef.current?.abort()
-        setCitySuggestions([])
-        setCitySuggestionsLoading(false)
-        return
-      }
-
-      citySuggestAbortRef.current?.abort()
-      const controller = new AbortController()
-      citySuggestAbortRef.current = controller
-      setCitySuggestionsLoading(true)
-
-      void fetchCitySuggestions({ coupleId, query, signal: controller.signal })
-        .then((suggestions) => {
-          if (!controller.signal.aborted) setCitySuggestions(suggestions)
-        })
-        .catch((suggestionError) => {
-          if (!(suggestionError instanceof DOMException && suggestionError.name === 'AbortError')) {
-            setCitySuggestions([])
-          }
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setCitySuggestionsLoading(false)
-        })
-    }, query.length >= 2 ? 300 : 0)
-
-    return () => {
-      window.clearTimeout(timer)
-      citySuggestAbortRef.current?.abort()
-    }
-  }, [coupleId, discoverCity, discoverOpened, selectedCity])
 
   const statusCounts = useMemo(
     () => ({
@@ -402,6 +377,12 @@ export function MonthlyPlansPage() {
     }),
     [plans],
   )
+
+  const visiblePlans = useMemo(() => {
+    const term = search.trim().toLocaleLowerCase('pt-BR')
+    return plans.filter((plan) => (statusFilter === 'all' || plan.status === statusFilter) &&
+      (!term || [plan.title, plan.description, plan.location_name, plan.category].some((value) => value?.toLocaleLowerCase('pt-BR').includes(term))))
+  }, [plans, search, statusFilter])
 
   const mapItems = useMemo<MapPlanItem[]>(() => {
     const externalItems: MapPlanItem[] = (discoverResult?.places ?? []).map((place) => ({
@@ -457,11 +438,12 @@ export function MonthlyPlansPage() {
   }
 
   async function handleSave(values: MonthlyPlanFormValues) {
-    if (!coupleId) return
+    if (!coupleId || savingRef.current) return
+    savingRef.current = true
     setSaving(true)
 
     try {
-      const metadata = editingPlan
+      const metadata = editingPlan && values.locationName === (editingPlan.location_name ?? '')
         ? {
             source: editingPlan.source,
             address: editingPlan.address,
@@ -471,7 +453,7 @@ export function MonthlyPlansPage() {
             googleMapsUrl: editingPlan.google_maps_url,
             sourceUrl: editingPlan.source_url,
           }
-        : { source: formSource }
+        : { source: editingPlan ? 'manual' as const : formSource }
       const input = { coupleId, monthStart: selectedMonth, ...values, ...metadata }
 
       if (editingPlan) await updateMonthlyPlan(editingPlan.id, input)
@@ -483,12 +465,14 @@ export function MonthlyPlansPage() {
     } catch (saveError) {
       notifications.show({ color: 'red', title: 'Não foi possível salvar', message: getErrorMessage(saveError) })
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
   }
 
   async function handleDelete() {
-    if (!deletingPlan || !coupleId) return
+    if (!deletingPlan || !coupleId || savingRef.current) return
+    savingRef.current = true
     setSaving(true)
     try {
       await deleteMonthlyPlan(deletingPlan.id, coupleId)
@@ -496,8 +480,9 @@ export function MonthlyPlansPage() {
       notifications.show({ color: 'green', title: 'Plano removido', message: 'Ele não aparece mais para o casal.' })
       await load(false)
     } catch (deleteError) {
-      notifications.show({ color: 'red', title: 'Não foi possível excluir', message: getErrorMessage(deleteError) })
+      notifications.show({ color: 'red', title: 'Não foi possível excluir', message: getErrorMessage(deleteError).includes('permissions') ? 'Não foi possível confirmar seu acesso ao plano. Atualize a página e confira se você está na conta vinculada ao casal.' : getErrorMessage(deleteError) })
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
   }
@@ -544,21 +529,26 @@ export function MonthlyPlansPage() {
     }
   }
 
+  function invalidateDiscovery() {
+    discoverAbortRef.current?.abort()
+    setDiscoverLoading(false)
+    setDiscoverResult(null)
+    setDiscoverError(null)
+  }
+
   async function handleSuggestionSearch(overrides: { city?: string; coordinates?: { latitude: number; longitude: number } } = {}) {
     if (!coupleId) return
-    const cityMatchesSelection = selectedCity?.label === discoverCity.trim()
-    const city = overrides.city !== undefined
-      ? overrides.city.trim()
-      : cityMatchesSelection
-        ? selectedCity.label
-        : discoverCity.trim()
-    const coordinates = overrides.coordinates ?? (cityMatchesSelection ? {
-      latitude: selectedCity.latitude,
-      longitude: selectedCity.longitude,
-    } : location.coordinates)
+    const city = overrides.city !== undefined ? overrides.city.trim() : discoverCity.trim()
+    // A typed city always takes precedence over a previously granted device location.
+    const coordinates = overrides.coordinates ?? (city ? undefined : location.coordinates)
 
     if (!city && !coordinates) {
       setDiscoverError('Informe uma cidade ou permita usar sua localização.')
+      return
+    }
+
+    if (discoverCategories.length === 0) {
+      setDiscoverError('Escolha pelo menos uma categoria para buscar.')
       return
     }
 
@@ -567,6 +557,7 @@ export function MonthlyPlansPage() {
     discoverAbortRef.current = controller
     setDiscoverLoading(true)
     setDiscoverError(null)
+    setDiscoverResult(null)
 
     try {
       const result = await fetchPlaceSuggestions({
@@ -578,8 +569,9 @@ export function MonthlyPlansPage() {
         categories: discoverCategories,
         signal: controller.signal,
       })
+      if (controller.signal.aborted) return
       setDiscoverResult(result)
-      setActiveMapId(result.places[0] ? `suggestion:${result.places[0].id}` : null)
+      setActiveMapId(null)
     } catch (searchError) {
       if (!(searchError instanceof DOMException && searchError.name === 'AbortError')) {
         setDiscoverError(getErrorMessage(searchError, 'Não foi possível buscar lugares agora.'))
@@ -594,13 +586,17 @@ export function MonthlyPlansPage() {
     if (!coordinates) return
 
     setDiscoverCity('')
-    setSelectedCity(null)
-    setCitySuggestions([])
     await handleSuggestionSearch({ city: '', coordinates })
   }
 
   async function handleSaveSuggestion(place: PlaceSuggestion) {
-    if (!coupleId) return
+    if (!coupleId || placeSavingRef.current) return
+    if (plans.some((plan) => plan.source_place_id === place.id)) {
+      notifications.show({ color: 'yellow', title: 'Lugar já salvo', message: 'Este lugar já está nos planos deste mês.' })
+      return
+    }
+    placeSavingRef.current = true
+    setSavingPlaceId(place.id)
     try {
       await createMonthlyPlan(buildMonthlyPlanFromSuggestion(coupleId, selectedMonth, place))
       notifications.show({ color: 'green', title: 'Lugar salvo nos planos', message: 'Seu par já poderá vê-lo na lista deste mês.' })
@@ -609,6 +605,9 @@ export function MonthlyPlansPage() {
       const message = getErrorMessage(saveError)
       notifications.show({ color: message.toLowerCase().includes('duplicate') ? 'yellow' : 'red', title: 'Lugar já salvo ou indisponível', message })
       await load(false)
+    } finally {
+      placeSavingRef.current = false
+      setSavingPlaceId(null)
     }
   }
 
@@ -617,7 +616,7 @@ export function MonthlyPlansPage() {
     setDiscoverError(null)
   }
 
-  if (loading && plans.length === 0) {
+  if (loading) {
     return <Container size="lg" py={96}><Group justify="center"><Loader color="pink" /></Group></Container>
   }
 
@@ -681,6 +680,17 @@ export function MonthlyPlansPage() {
           }}>Sortear uma ideia</Button>
         </Group>
 
+        {plans.length > 0 ? (
+          <div className="monthly-plans-filters">
+            <TextInput aria-label="Buscar planos" placeholder="Buscar por título, local ou categoria" value={search} onChange={(event) => setSearch(event.currentTarget.value)} />
+            <div className="monthly-filter-buttons" aria-label="Filtrar planos por situação">
+              {[{ value: 'all', label: 'Todos' }, ...monthlyPlanStatuses].map((status) => (
+                <button key={status.value} type="button" aria-pressed={statusFilter === status.value} onClick={() => setStatusFilter(status.value as MonthlyPlanStatus | 'all')}>{status.label}</button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         {plans.length === 0 ? (
           <Card className="monthly-plans-empty glass-panel" radius={8} p={{ base: 'xl', sm: 56 }} withBorder>
             <Stack align="center" gap="sm" ta="center">
@@ -693,13 +703,14 @@ export function MonthlyPlansPage() {
         ) : (
           <div className="monthly-plans-layout">
             <Stack gap="xl">
+              {visiblePlans.length === 0 ? <Paper className="monthly-filter-empty" p="xl"><Text fw={700}>Nenhum plano encontrado</Text><Text size="sm" c="dimmed">Experimente outro termo ou filtro.</Text><Button variant="subtle" color="pink" onClick={() => { setSearch(''); setStatusFilter('all') }}>Limpar filtros</Button></Paper> : null}
               {monthlyPlanStatuses.map((status) => {
-                const groupPlans = plans.filter((plan) => plan.status === status.value)
+                const groupPlans = visiblePlans.filter((plan) => plan.status === status.value)
                 if (groupPlans.length === 0) return null
                 return <Stack key={status.value} gap="sm"><Group gap="xs"><Text fw={800}>{status.label}</Text><Badge color={statusColors[status.value]} variant="light">{groupPlans.length}</Badge></Group><SimpleGrid cols={{ base: 1, lg: 2 }} spacing="md">{groupPlans.map((plan) => <MonthlyPlanCard key={plan.id} plan={plan} currentUserId={user?.id} onEdit={openEditForm} onDelete={setDeletingPlan} onPlan={handlePlan} onComplete={setCompletionPlan} onCalendar={handleCalendar} />)}</SimpleGrid></Stack>
               })}
             </Stack>
-            <Card className="monthly-plans-map-card glass-panel" radius={8} p="sm" withBorder>
+            <Card className={`monthly-plans-map-card glass-panel${visiblePlans.length ? ' monthly-plans-map-with-groups' : ''}`} radius={8} p="sm" withBorder>
               <Group justify="space-between" px="xs" pb="sm"><div><Text className="monthly-plans-section-label" fw={800} tt="uppercase" size="xs">Mapa dos lugares</Text><Text size="sm" c="dimmed">Sugestões salvas e lugares que vocês já escolheram.</Text></div><Button variant="light" color="pink" size="xs" leftSection={<Compass size={14} />} onClick={openDiscovery}>Descobrir</Button></Group>
               {mapItems.length > 0 ? <PlanMap items={mapItems} activeId={activeMapId} onSelect={setActiveMapId} fallbackCenter={mapCenter} /> : <div className="monthly-map-empty"><MapPin size={22} /><Text size="sm" ta="center">Quando um lugar tiver coordenadas, ele aparece aqui.</Text></div>}
             </Card>
@@ -708,12 +719,12 @@ export function MonthlyPlansPage() {
       </Stack>
 
       <Modal opened={formOpened} onClose={() => setFormOpened(false)} title={editingPlan ? 'Editar plano do mês' : 'Adicionar ideia para vocês'} centered size="lg">
-        <form onSubmit={form.onSubmit(handleSave)}>
+        <form onSubmit={(event) => void form.onSubmit(handleSave)(event)}>
           <Stack gap="md">
-            <TextInput label="O que vocês querem fazer?" placeholder="Ir ao zoológico" required {...form.getInputProps('title')} />
+            <TextInput label="O que vocês querem fazer?" placeholder="Ir ao zoológico" maxLength={120} required {...form.getInputProps('title')} />
             <Group grow align="flex-start"><Select label="Categoria" data={monthlyPlanCategories} allowDeselect={false} {...form.getInputProps('category')} /><TextInput label="Data do mês" type="date" {...form.getInputProps('scheduledDate')} /></Group>
-            <TextInput label="Local" placeholder="Parque, restaurante ou endereço" leftSection={<MapPin size={15} />} {...form.getInputProps('locationName')} />
-            <Textarea label="Detalhes" placeholder="Anote horários, preferências ou uma combinação para vocês…" minRows={4} autosize {...form.getInputProps('description')} />
+            <TextInput label="Local" maxLength={120} placeholder="Parque, restaurante ou endereço" leftSection={<MapPin size={15} />} {...form.getInputProps('locationName')} />
+            <Textarea maxLength={5000} label="Detalhes" placeholder="Anote horários, preferências ou uma combinação para vocês…" minRows={4} autosize {...form.getInputProps('description')} />
             <Text size="xs" c="dimmed">O plano ficará visível para os dois e começará como uma ideia. A data pode ser escolhida depois.</Text>
             <Group justify="flex-end" mt="sm"><Button variant="subtle" color="gray" onClick={() => setFormOpened(false)}>Cancelar</Button><Button type="submit" color="pink" loading={saving}>{editingPlan ? 'Salvar alterações' : 'Salvar ideia'}</Button></Group>
           </Stack>
@@ -728,18 +739,18 @@ export function MonthlyPlansPage() {
         <Stack gap="md"><Text>Vocês viveram <strong>{completionPlan?.title}</strong>. Querem registrar esse momento na Timeline para adicionar fotos depois?</Text><Group justify="flex-end" wrap="wrap"><Button variant="subtle" color="gray" loading={completionLoading} onClick={() => void handleComplete(false)}>Apenas concluir</Button><Button color="pink" loading={completionLoading} leftSection={<Heart size={15} />} onClick={() => void handleComplete(true)}>Concluir e criar memória</Button></Group></Stack>
       </Modal>
 
-      <Modal opened={discoverOpened} onClose={() => { setDiscoverOpened(false); discoverAbortRef.current?.abort(); citySuggestAbortRef.current?.abort(); setDiscoverLoading(false); setCitySuggestionsLoading(false) }} title="Encontrar um programa para vocês" centered size="xl">
-        <Stack gap="md">
-          <Text c="dimmed" size="sm">Busque lugares reais próximos sem salvar a localização do dispositivo. Vocês escolhem o que merece entrar no mês.</Text>
-          <Group grow align="flex-start"><CityAutocomplete value={discoverCity} suggestions={citySuggestions} loading={citySuggestionsLoading} onChange={(value) => { setDiscoverCity(value); setSelectedCity(null); setDiscoverResult(null) }} onSelect={(suggestion) => { setDiscoverCity(suggestion.label); setSelectedCity(suggestion); setCitySuggestions([]); setDiscoverResult(null) }} /><NumberInput label="Raio" suffix=" km" min={1} max={15} value={discoverRadius} onChange={(value) => setDiscoverRadius(typeof value === 'number' ? value : 5)} /></Group>
-          <MultiSelect label="Categorias" data={monthlyPlanCategories} value={discoverCategories} onChange={(values) => setDiscoverCategories(values as MonthlyPlanCategory[])} searchable clearable={false} />
+      <Modal opened={discoverOpened} onClose={() => { setDiscoverOpened(false); discoverAbortRef.current?.abort(); setDiscoverLoading(false); }} title="Encontrar um programa para vocês" centered size="xl">
+        <Stack gap="md" className="monthly-discovery">
+          <Text c="dimmed" size="sm">Escolha uma cidade ou use sua localização, defina o raio e encontre lugares para conhecerem juntos.</Text>
+          <Group grow align="flex-start"><TextInput label="Cidade" description="Digite a cidade e o estado para buscar." placeholder="Ex.: Cascavel, PR" value={discoverCity} onChange={(event) => { setDiscoverCity(event.currentTarget.value); invalidateDiscovery() }} /><NumberInput label="Raio" description="Distância a partir do ponto buscado." suffix=" km" min={1} max={15} value={discoverRadius} onChange={(value) => { setDiscoverRadius(typeof value === 'number' ? value : 5); invalidateDiscovery() }} /></Group>
+          <MultiSelect label="Categorias" data={monthlyPlanCategories} value={discoverCategories} onChange={(values) => { setDiscoverCategories(values as MonthlyPlanCategory[]); invalidateDiscovery() }} searchable clearable={false} />
           <Group justify="space-between" align="center" gap="xs"><Button variant="light" color="pink" leftSection={<Navigation size={15} />} loading={location.status === 'loading'} onClick={() => void handleUseLocation()}>Usar minha localização</Button><Button color="pink" leftSection={<Compass size={15} />} loading={discoverLoading} onClick={() => void handleSuggestionSearch()}>Buscar sugestões</Button></Group>
           {location.error ? <Alert color="yellow" radius={8}>{location.error}</Alert> : null}
-          {discoverError ? <Alert color="red" radius={8} title="Busca indisponível">{discoverError}</Alert> : null}
+          {discoverError ? <Alert color="red" radius={8} title="Busca indisponível"><Text size="sm">{discoverError}</Text><Button variant="subtle" color="red" size="xs" mt="xs" onClick={() => void handleSuggestionSearch()}>Tentar novamente</Button></Alert> : null}
           {discoverResult ? <>
-            <Paper className="monthly-weather-card" p="sm" withBorder><Group justify="space-between"><div><Text size="xs" c="dimmed" tt="uppercase" fw={800}>Previsão no ponto buscado</Text><Text fw={800}>{discoverResult.location.label}</Text></div><Text size="sm" c="var(--palette-peach)">{discoverResult.weather ? `${Math.round(discoverResult.weather.temperature ?? 0)}°C · ${weatherLabel(discoverResult.weather.weatherCode)}${discoverResult.weather.precipitationProbability !== null ? ` · chuva ${discoverResult.weather.precipitationProbability}%` : ''}` : 'Clima indisponível'}</Text></Group></Paper>
+            <Paper className="monthly-weather-card" p="sm" withBorder><Group justify="space-between"><div><Text size="xs" c="dimmed" tt="uppercase" fw={800}>Previsão no ponto buscado</Text><Text fw={800}>{discoverResult.location.label}</Text></div><Text size="sm" c="var(--palette-peach)">{discoverResult.weather ? `${discoverResult.weather.temperature !== null ? `${Math.round(discoverResult.weather.temperature)}°C · ` : ''}${weatherLabel(discoverResult.weather.weatherCode)}${discoverResult.weather.precipitationProbability !== null ? ` · chuva ${discoverResult.weather.precipitationProbability}%` : ''}` : 'Clima indisponível'}</Text></Group></Paper>
             {discoverResult.warnings.map((warning) => <Alert key={warning} color="yellow" radius={8}>{warning}</Alert>)}
-            <div className="monthly-discovery-layout"><Stack gap="sm" className="monthly-discovery-results"><Group justify="space-between"><Text fw={800}>{discoverResult.places.length} lugares encontrados</Text><Button variant="subtle" color="gray" size="xs" leftSection={<RotateCw size={13} />} onClick={() => void handleSuggestionSearch()}>Atualizar</Button></Group>{discoverResult.places.length > 0 ? rankPlaceSuggestions(discoverResult.places, discoverResult.weather).map((place) => <Card key={place.id} className="monthly-suggestion-card" radius={8} p="sm" withBorder data-active={activeMapId === `suggestion:${place.id}`}><Group justify="space-between" align="flex-start" wrap="nowrap"><div><Text fw={800} lineClamp={1}>{place.name}</Text><Text size="xs" c="dimmed">{place.category}{place.distanceKm !== null ? ` · ${place.distanceKm} km` : ''}</Text>{place.address ? <Text size="xs" mt={4} lineClamp={2}>{place.address}</Text> : null}</div><Stack gap="xs"><Button size="compact-xs" variant="light" color="pink" onClick={() => setActiveMapId(`suggestion:${place.id}`)}>Ver no mapa</Button><Button size="compact-xs" color="pink" onClick={() => void handleSaveSuggestion(place)}>Salvar ideia</Button></Stack></Group></Card>) : <Card className="monthly-map-empty" p="xl" withBorder><Text size="sm" ta="center" c="dimmed">Nenhum lugar mapeado nessa busca. Tente aumentar o raio ou escolher outra categoria.</Text></Card>}</Stack><div className="monthly-discovery-map">{mapItems.length > 0 ? <PlanMap items={mapItems} activeId={activeMapId} onSelect={setActiveMapId} fallbackCenter={mapCenter} /> : <div className="monthly-map-empty"><MapPin size={22} /><Text size="sm" ta="center">O mapa aparecerá quando houver resultados.</Text></div>}</div></div>
+            <div className="monthly-discovery-layout"><Stack gap="sm" className="monthly-discovery-results"><Group justify="space-between"><Text fw={800}>{discoverResult.places.length} {discoverResult.places.length === 1 ? 'lugar encontrado' : 'lugares encontrados'}</Text><Button variant="subtle" color="gray" size="xs" leftSection={<RotateCw size={13} />} onClick={() => void handleSuggestionSearch()}>Atualizar</Button></Group>{discoverResult.places.length > 0 ? rankPlaceSuggestions(discoverResult.places, discoverResult.weather).map((place) => <Card key={place.id} className="monthly-suggestion-card" radius={8} p="sm" withBorder data-active={activeMapId === `suggestion:${place.id}`}><Group justify="space-between" align="flex-start" wrap="nowrap"><div><Text fw={800} lineClamp={1}>{place.name}</Text><Text size="xs" c="dimmed">{place.category}{place.distanceKm !== null ? ` · ${place.distanceKm} km` : ''}</Text>{place.address ? <Text size="xs" mt={4} lineClamp={2}>{place.address}</Text> : null}</div><Stack gap="xs"><Button size="compact-xs" variant="light" color="pink" onClick={() => setActiveMapId(`suggestion:${place.id}`)}>Ver no mapa</Button><Button size="compact-xs" color="pink" loading={savingPlaceId === place.id} disabled={Boolean(savingPlaceId) || plans.some((plan) => plan.source_place_id === place.id)} onClick={() => void handleSaveSuggestion(place)}>{plans.some((plan) => plan.source_place_id === place.id) ? 'Salvo' : 'Salvar ideia'}</Button></Stack></Group></Card>) : <Card className="monthly-map-empty" p="xl" withBorder><Text size="sm" ta="center" c="dimmed">Nenhum lugar mapeado nessa busca. Tente aumentar o raio ou escolher outra categoria.</Text></Card>}</Stack><div className="monthly-discovery-map">{mapItems.length > 0 ? <PlanMap items={mapItems} activeId={activeMapId} onSelect={setActiveMapId} fallbackCenter={mapCenter} /> : <div className="monthly-map-empty"><MapPin size={22} /><Text size="sm" ta="center">O mapa aparecerá quando houver resultados.</Text></div>}</div></div>
           </> : <Card className="monthly-discovery-intro" p="lg" withBorder><Stack align="center" ta="center" gap="xs"><Sparkles size={24} color="var(--palette-peach)" /><Text fw={800}>Onde vocês estão pensando em sair?</Text><Text size="sm" c="dimmed">Informe uma cidade ou use a localização apenas para esta busca.</Text></Stack></Card>}
           <Text size="xs" c="dimmed">Dados de lugares: OpenStreetMap/Overpass. Clima: Open-Meteo. Os mapas incluem atribuição às fontes.</Text>
         </Stack>

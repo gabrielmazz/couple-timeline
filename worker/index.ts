@@ -17,7 +17,7 @@ const defaultAllowedOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173',
 const maxImageSize = 5 * 1024 * 1024
 const maxPathsPerRequest = 200
 const defaultReadUrlTtlSeconds = 60 * 60
-const suggestionsCacheTtlSeconds = 6 * 60 * 60
+const suggestionsCacheTtlSeconds = 15 * 60
 const geocodeCacheTtlSeconds = 24 * 60 * 60
 const maxSuggestionResults = 24
 const nominatimUserAgent = 'couple-timeline/1.0 (https://github.com/gabrielmazz/couple-timeline)'
@@ -50,7 +50,7 @@ const suggestionCategoryTags: Record<SuggestionCategory, string[]> = {
   Trilha: ['route=hiking'],
   'Centro cultural': ['amenity=arts_centre', 'amenity=community_centre'],
   Atividade: ['leisure=fitness_centre', 'leisure=sports_centre', 'leisure=swimming_pool'],
-  Outro: ['amenity=community_centre', 'tourism=attraction'],
+  Outro: ['tourism=attraction'],
 }
 
 const suggestionsQuerySchema = z.object({
@@ -142,8 +142,17 @@ function createSuggestionsCacheKey(request: Request, location: SuggestionLocatio
   const categoryKey = [...categories].sort().join(',')
 
   return new Request(
-    `${url.origin}/api/plans/suggestions?lat=${roundCoordinate(location.latitude)}&lng=${roundCoordinate(location.longitude)}&radius=${radiusKm}&categories=${encodeURIComponent(categoryKey)}`,
+    `${url.origin}/api/plans/suggestions?v=2&lat=${roundCoordinate(location.latitude)}&lng=${roundCoordinate(location.longitude)}&radius=${radiusKm}&categories=${encodeURIComponent(categoryKey)}`,
   )
+}
+
+class ExternalHttpError extends Error {
+  readonly status: number
+
+  constructor(status: number) {
+    super(`Fonte externa respondeu com ${status}.`)
+    this.status = status
+  }
 }
 
 async function fetchExternalJson<T>(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 9000) {
@@ -151,10 +160,11 @@ async function fetchExternalJson<T>(input: RequestInfo | URL, init: RequestInit 
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
-    const response = await fetch(input, { ...init, signal: controller.signal })
+    const signal = init.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal
+    const response = await fetch(input, { ...init, signal })
 
     if (!response.ok) {
-      throw new Error(`Fonte externa respondeu com ${response.status}.`)
+      throw new ExternalHttpError(response.status)
     }
 
     return await response.json<T>()
@@ -295,11 +305,11 @@ function buildOverpassQuery(location: SuggestionLocation, radiusKm: number, cate
   const filters = Array.from(new Set(categories.flatMap((category) => suggestionCategoryTags[category])))
     .map((tag) => {
       const [key, value] = tag.split('=')
-      return `nwr(around:${radiusMeters},${location.latitude},${location.longitude})[${key}=${value}];`
+      return `nwr(around:${radiusMeters},${location.latitude},${location.longitude})[${key}=${value}][name];`
     })
     .join('\n')
 
-  return `[out:json][timeout:8];(${filters});out center tags;`
+  return `[out:json][timeout:20];(${filters});out center;`
 }
 
 function suggestionCategoryFromTags(tags: Record<string, string | undefined> = {}): SuggestionCategory {
@@ -340,7 +350,7 @@ export function normalizeOSMPlaces(elements: OSMElement[], location: SuggestionL
       seen.add(id)
       const category = suggestionCategoryFromTags(element.tags)
 
-      if (!categories.includes(category) && !categories.includes('Outro')) {
+      if (!categories.includes(category)) {
         return null
       }
 
@@ -362,13 +372,26 @@ export function normalizeOSMPlaces(elements: OSMElement[], location: SuggestionL
 }
 
 async function fetchOpenStreetMapPlaces(location: SuggestionLocation, radiusKm: number, categories: SuggestionCategory[]) {
-  const response = await fetchExternalJson<{ elements?: OSMElement[] }>('https://overpass-api.de/api/interpreter', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
-    body: new URLSearchParams({ data: buildOverpassQuery(location, radiusKm, categories) }),
-  }, 12000)
+  const query = buildOverpassQuery(location, radiusKm, categories)
+  const servers = ['https://overpass.private.coffee/api/interpreter', 'https://overpass-api.de/api/interpreter']
 
-  return normalizeOSMPlaces(response.elements ?? [], location, categories)
+  for (const [index, url] of servers.entries()) {
+    try {
+      const response = await fetchExternalJson<{ elements?: OSMElement[]; remark?: string }>(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json', 'User-Agent': nominatimUserAgent },
+        body: new URLSearchParams({ data: query }),
+      }, 25000)
+      if (response.remark || !Array.isArray(response.elements)) throw new Error('A busca de lugares não foi concluída.')
+      return normalizeOSMPlaces(response.elements, location, categories)
+    } catch (error) {
+      console.error('Falha na busca de lugares', index === 0 ? 'principal' : 'alternativo', error instanceof ExternalHttpError ? `HTTP ${error.status}` : error instanceof Error ? error.name : 'Erro desconhecido')
+      // Respect rate limits and avoid spreading a rejected request to another provider.
+      if ((error instanceof ExternalHttpError && error.status === 429) || index === servers.length - 1) throw error
+    }
+  }
+
+  throw new Error('Serviço de lugares indisponível.')
 }
 
 async function fetchSuggestionWeather(location: SuggestionLocation) {
@@ -442,8 +465,9 @@ async function handlePlanSuggestions(request: Request, env: Env) {
   const cachedResponse = await caches.default.match(cacheKey)
 
   if (cachedResponse) {
-    return jsonResponse(request, env, await cachedResponse.clone().json(), {
-      headers: { 'Cache-Control': `public, max-age=${suggestionsCacheTtlSeconds}` },
+    const cached = await cachedResponse.clone().json() as { weather: unknown; places: unknown; warnings: string[] }
+    return jsonResponse(request, env, { ...cached, location }, {
+      headers: { 'Cache-Control': 'private, no-store' },
     })
   }
 
@@ -455,7 +479,9 @@ async function handlePlanSuggestions(request: Request, env: Env) {
   const places = placesResult.status === 'fulfilled' ? placesResult.value : []
   const weather = weatherResult.status === 'fulfilled' ? weatherResult.value : null
 
-  if (placesResult.status === 'rejected') warnings.push('Não foi possível carregar os lugares próximos agora.')
+  if (placesResult.status === 'rejected') {
+    return errorResponse(request, env, 'O serviço de lugares está indisponível no momento. Tente novamente em instantes.', 503)
+  }
   if (weatherResult.status === 'rejected') warnings.push('Não foi possível carregar o clima agora.')
 
   const response = jsonResponse(request, env, {
@@ -469,7 +495,7 @@ async function handlePlanSuggestions(request: Request, env: Env) {
     },
   })
 
-  await caches.default.put(cacheKey, response.clone()).catch(() => undefined)
+  if (weatherResult.status === 'fulfilled') await caches.default.put(cacheKey, response.clone()).catch(() => undefined)
   return response
 }
 
