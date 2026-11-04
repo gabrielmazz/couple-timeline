@@ -1,3 +1,6 @@
+// couple_relationship_rules/{id}: id, couple_id, title (2–120 chars),
+// description (0–5000 chars), created_by, created_at and updated_at (timestamps).
+// Only members of the root couple can read or change these shared documents.
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -169,6 +172,25 @@ service cloud.firestore {
           || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updated_at'])
             && request.resource.data.status in ['purchased', 'received']));
       allow delete: if member(resource.data.couple_id) && resource.data.created_by == request.auth.uid;
+    }
+    match /couple_relationship_rules/{id} {
+      function validRule(data) {
+        return data.keys().hasAll(['id', 'couple_id', 'title', 'description', 'created_by', 'created_at', 'updated_at'])
+          && data.keys().hasOnly(['id', 'couple_id', 'title', 'description', 'created_by', 'created_at', 'updated_at'])
+          && data.id == id && smallString(data.couple_id, 100) && title(data)
+          && smallString(data.description, 5000) && smallString(data.created_by, 128)
+          && data.created_at is timestamp && data.updated_at is timestamp;
+      }
+      allow read: if memberRoot(resource.data.couple_id);
+      allow create: if signedIn() && validRule(request.resource.data)
+        && memberRoot(request.resource.data.couple_id)
+        && couple(request.resource.data.couple_id).parent_id == null
+        && request.resource.data.created_by == request.auth.uid
+        && request.resource.data.created_at == request.time && request.resource.data.updated_at == request.time;
+      allow update: if memberRoot(resource.data.couple_id) && validRule(request.resource.data)
+        && unchanged(['id', 'couple_id', 'created_by', 'created_at'])
+        && request.resource.data.updated_at == request.time;
+      allow delete: if memberRoot(resource.data.couple_id);
     }
     match /{kind}/{id} {
       allow read: if kind in ['couple_calendar_entries', 'future_moments', 'couple_monthly_plans'] && member(resource.data.couple_id);

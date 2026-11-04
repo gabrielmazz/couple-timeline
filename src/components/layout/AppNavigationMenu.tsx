@@ -86,6 +86,7 @@ export function AppNavigationMenu() {
 			{ label: 'Linha do tempo', link: timelinePath },
 			{ label: 'Calendário', link: '/calendario' },
 			{ label: 'Planos do mês', link: '/planos-do-mes' },
+			{ label: 'Nossas regras', link: '/nossas-regras' },
 			{ label: 'Momentos futuros', link: '/futuro' },
 			{ label: 'Presentes', link: '/presentes' },
 			{ label: 'Jogos', link: '/jogos' },
