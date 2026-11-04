@@ -1,6 +1,54 @@
 {
   "version": 1,
   "skills": {
+    "agent-browser": {
+      "source": "vercel-labs/agent-browser",
+      "sourceType": "github",
+      "skillPath": "skills/agent-browser/SKILL.md",
+      "computedHash": "60a9cbe5af176150582c019e16e5d3703a41bb02d88438e881349876120d7944"
+    },
+    "code-review": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/code-review/SKILL.md",
+      "computedHash": "c2745e2be960b82b9fddd82cf45265f42431e7b045c403f297b25f0f311e9210"
+    },
+    "code-review-and-quality": {
+      "source": "addyosmani/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/code-review-and-quality/SKILL.md",
+      "computedHash": "895b57b6fa13a75d182472c1428621cc59fca373723c07c2372ab4ac96307186"
+    },
+    "design-mobile-apps": {
+      "source": "designed-by-ai/skills",
+      "sourceType": "github",
+      "skillPath": "skills/design-mobile-apps/SKILL.md",
+      "computedHash": "6d6ed68c53ac9f5564aea489ededb387b8cdf29ffa6f78f2a1fa449f86f19e16"
+    },
+    "design-taste-frontend": {
+      "source": "leonxlnx/taste-skill",
+      "sourceType": "github",
+      "skillPath": "skills/taste-skill/SKILL.md",
+      "computedHash": "6ac8ba6089dcbc303744a507a4587113c5d845ca2f658b3ce2b0b5eab108fb0d"
+    },
+    "hyperframes": {
+      "source": "heygen-com/hyperframes",
+      "sourceType": "github",
+      "skillPath": "skills/hyperframes/SKILL.md",
+      "computedHash": "1f66c33ae59c613d6c5cb483426ec8b80199ebea3861f1c71c74c62aaa295bc0"
+    },
+    "hyperframes-cli": {
+      "source": "heygen-com/hyperframes",
+      "sourceType": "github",
+      "skillPath": "skills/hyperframes-cli/SKILL.md",
+      "computedHash": "f5431a7766e810fcf8f6883c9b8bc6195bdfc999e3258718abc3fd6d3d26f686"
+    },
+    "requesting-code-review": {
+      "source": "obra/superpowers",
+      "sourceType": "github",
+      "skillPath": "skills/requesting-code-review/SKILL.md",
+      "computedHash": "b095ac8c980339436b41de9989328f3f288f2e2a70452df28452bbeb6531d604"
+    },
     "ui-ux-pro-max": {
       "source": "nextlevelbuilder/ui-ux-pro-max-skill",
       "sourceType": "github",

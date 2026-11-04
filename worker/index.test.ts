@@ -86,6 +86,36 @@ describe('plan suggestions worker', () => {
     }
   })
 
+  it('tries the backup server and does not cache failed place searches', async () => {
+    const access = vi.spyOn(firebaseAccess, 'canEditCouple').mockResolvedValue(true)
+    const cache = { match: vi.fn().mockResolvedValue(undefined), put: vi.fn().mockResolvedValue(undefined) }
+    let available = false
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('open-meteo')) return Response.json({ current: { temperature_2m: 20, weather_code: 0 } })
+      if (url.includes('overpass-api.de') && available) {
+        return Response.json({ elements: [{ type: 'node', id: 1, lat: -25.43, lon: -49.27, tags: { name: 'Café', amenity: 'cafe' } }] })
+      }
+      return new Response(null, { status: 503 })
+    })
+    vi.stubGlobal('caches', { default: cache })
+    vi.stubGlobal('fetch', fetchMock)
+    const request = () => new Request(`https://worker.test/api/plans/suggestions?coupleId=${coupleId}&latitude=-25.43&longitude=-49.27&categories=Caf%C3%A9`, { headers: { Authorization: 'Bearer token' } }) as Parameters<typeof worker.fetch>[0]
+    try {
+      const failed = await worker.fetch(request(), {} as Env, {} as ExecutionContext)
+      expect(failed.status).toBe(503)
+      expect(cache.put).not.toHaveBeenCalled()
+      available = true
+      const recovered = await worker.fetch(request(), {} as Env, {} as ExecutionContext)
+      expect(recovered.status).toBe(200)
+      expect(await recovered.json()).toMatchObject({ places: [{ id: 'node/1', name: 'Café' }] })
+      expect(cache.put).toHaveBeenCalledOnce()
+    } finally {
+      access.mockRestore()
+      vi.unstubAllGlobals()
+    }
+  }, 10000)
+
   it('removes places without names or coordinates and creates Google Maps links', () => {
     const places = normalizeOSMPlaces(
       [
