@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing'
-import { doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, writeBatch } from 'firebase/firestore'
+import { doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, runTransaction, query, where, writeBatch } from 'firebase/firestore'
 const env = await initializeTestEnvironment({ projectId: 'demo-couple-test', firestore: { rules: readFileSync('firestore.rules', 'utf8') } })
 const own = env.authenticatedContext('owner', { email: 'owner@example.test', email_verified: true }).firestore()
 const partner = env.authenticatedContext('partner', { email: 'partner@example.test', email_verified: true }).firestore()
@@ -31,6 +31,8 @@ try {
       'timeline_event_comment_reactions/r1': { id: 'r1', comment_id: 'c1', user_id: 'owner', emoji: '❤️', created_at: '2026' },
       'couple_monthly_plans/p1': { id: 'p1', couple_id: 'private', created_by: 'owner', title: 'Plano', created_at: '2026', updated_at: '2026' },
       'couple_monthly_plans/p2': { id: 'p2', couple_id: 'private', created_by: 'partner', title: 'Plano', created_at: '2026', updated_at: '2026' },
+      'couple_monthly_plans/p4': { id: 'p4', couple_id: 'private', created_by: 'owner', title: 'Plano', created_at: '2026', updated_at: '2026' },
+      'couple_monthly_plans/p5': { id: 'p5', couple_id: 'private', created_by: 'partner', title: 'Plano', created_at: '2026', updated_at: '2026' },
       'couple_monthly_plans/p3': { id: 'p3', couple_id: 'private', created_by: 'owner', title: 'Plano', created_at: '2026', updated_at: '2026' },
       'couple_gifts/g1': { id: 'g1', couple_id: 'private', created_by: 'owner', recipient_id: 'partner', title: 'Presente', status: 'wanted', created_at: '2026', updated_at: '2026' },
     }
@@ -40,6 +42,13 @@ try {
   await assertFails(deleteDoc(doc(other, 'couple_monthly_plans/p3')))
   await assertSucceeds(deleteDoc(doc(partner, 'couple_monthly_plans/p1')))
   await assertSucceeds(deleteDoc(doc(own, 'couple_monthly_plans/p2')))
+  for (const [db, planId] of [[own, 'p5'], [partner, 'p4']]) {
+    await assertSucceeds(runTransaction(db, async (tx) => {
+      const ref = doc(db, 'couple_monthly_plans', planId)
+      await tx.get(ref)
+      tx.delete(ref)
+    }))
+  }
   await assertSucceeds(getDoc(doc(own, 'profiles/partner')))
   await assertFails(getDoc(doc(other, 'profiles/partner')))
   await assertFails(getDoc(doc(anon, 'couples/private')))
