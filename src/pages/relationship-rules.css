@@ -1,0 +1,18 @@
+.relationship-rules-page .monthly-plans-hero h1 { max-width: 17ch; }
+.relationship-rules-search { width: min(100%, 320px); }
+.relationship-rule-card .relationship-rule-description { white-space: pre-wrap; overflow-wrap: anywhere; }
+.relationship-rule-card h3 { overflow-wrap: anywhere; }
+
+.monthly-plans-page .relationship-rule-card {
+  padding: 1.5rem;
+}
+
+.monthly-plans-page .relationship-rule-card > .mantine-Stack-root {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.relationship-rule-card .relationship-rule-description {
+  margin-top: 0.75rem;
+  line-height: 1.7;
+}
