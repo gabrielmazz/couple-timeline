@@ -2418,9 +2418,8 @@ img {
     grid-template-columns: 1fr;
     gap: 18px;
     overflow-x: visible;
-    padding: 0 0 24px 18px;
+    padding: 0 0 24px;
     scroll-snap-type: none;
-    border-left: 1px solid rgba(210, 138, 177, 0.36);
   }
 
   .timeline-track::before {
@@ -2582,6 +2581,7 @@ body { background: var(--app-bg); }
   .mantine-Tabs-list { flex-wrap: wrap; }
   .timeline-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .timeline-filters > :last-child:nth-child(3) { grid-column: 1 / -1; }
+  .timeline-filters-private > * { width: 100%; max-width: none; min-width: 0; }
 }
 @media (max-width: 800px) {
   .app-nav-primary { display: none; }
