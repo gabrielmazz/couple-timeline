@@ -276,6 +276,7 @@ export function TimelineView({
 				years={years}
 				selectedYear={filters.year}
 				selectedMonth={filters.month}
+				isPrivateTimeline={couple.visibility === 'private'}
 				sortOrder={filters.sortOrder}
 				onYearChange={(year) => onFiltersChange({ ...filters, year })}
 				onMonthChange={(month) => onFiltersChange({ ...filters, month })}

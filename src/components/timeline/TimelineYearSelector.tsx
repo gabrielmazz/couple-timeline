@@ -22,6 +22,7 @@ type TimelineYearSelectorProps = {
 	years: number[]
 	selectedYear: number | null
 	selectedMonth: number | null
+	isPrivateTimeline?: boolean
 	sortOrder?: TimelineSortOrder
 	showSortOrder?: boolean
 	onYearChange: (year: number | null) => void
@@ -33,6 +34,7 @@ export function TimelineYearSelector({
 	years,
 	selectedYear,
 	selectedMonth,
+	isPrivateTimeline = false,
 	sortOrder,
 	showSortOrder = true,
 	onYearChange,
@@ -42,7 +44,7 @@ export function TimelineYearSelector({
 	if (years.length === 0) return null
 
 	return (
-		<Group className="timeline-filters" grow align="flex-end" gap="md">
+		<Group className={`timeline-filters${isPrivateTimeline ? ' timeline-filters-private' : ''}`} grow align="flex-end" gap="md">
 			<Select
 				label="Ano"
 				data={[

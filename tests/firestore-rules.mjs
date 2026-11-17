@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing'
-import { doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, runTransaction, query, where, writeBatch } from 'firebase/firestore'
+import { doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, runTransaction, query, where, writeBatch, serverTimestamp } from 'firebase/firestore'
 const env = await initializeTestEnvironment({ projectId: 'demo-couple-test', firestore: { rules: readFileSync('firestore.rules', 'utf8') } })
 const own = env.authenticatedContext('owner', { email: 'owner@example.test', email_verified: true }).firestore()
 const partner = env.authenticatedContext('partner', { email: 'partner@example.test', email_verified: true }).firestore()
@@ -38,6 +38,19 @@ try {
     }
     await Promise.all(Object.entries(data).map(([key, value]) => setDoc(doc(db,key), value)))
   })
+  const sharedRule = { id: 'rule-1', couple_id: 'private', title: 'Conversar sempre', description: 'Com respeito', created_by: 'owner', created_at: serverTimestamp(), updated_at: serverTimestamp() }
+  await assertSucceeds(setDoc(doc(own, 'couple_relationship_rules/rule-1'), sharedRule))
+  await assertSucceeds(getDocs(query(collection(partner, 'couple_relationship_rules'), where('couple_id', '==', 'private'))))
+  await assertFails(getDocs(query(collection(anon, 'couple_relationship_rules'), where('couple_id', '==', 'private'))))
+  await assertFails(getDoc(doc(other, 'couple_relationship_rules/rule-1')))
+  await assertFails(setDoc(doc(other, 'couple_relationship_rules/rule-2'), { ...sharedRule, id: 'rule-2', created_by: 'other' }))
+  await assertFails(updateDoc(doc(partner, 'couple_relationship_rules/rule-1'), { created_by: 'partner', updated_at: serverTimestamp() }))
+  await assertFails(updateDoc(doc(partner, 'couple_relationship_rules/rule-1'), { description: 'x'.repeat(5001), updated_at: serverTimestamp() }))
+  await assertFails(updateDoc(doc(partner, 'couple_relationship_rules/rule-1'), { extra: true, updated_at: serverTimestamp() }))
+  await assertFails(updateDoc(doc(other, 'couple_relationship_rules/rule-1'), { title: 'Alterado', updated_at: serverTimestamp() }))
+  await assertSucceeds(updateDoc(doc(partner, 'couple_relationship_rules/rule-1'), { title: 'Ouvir e conversar', updated_at: serverTimestamp() }))
+  await assertFails(deleteDoc(doc(other, 'couple_relationship_rules/rule-1')))
+  await assertSucceeds(deleteDoc(doc(partner, 'couple_relationship_rules/rule-1')))
   await assertSucceeds(getDocs(query(collection(own, 'couple_monthly_plans'), where('couple_id', '==', 'private'))))
   await assertFails(deleteDoc(doc(other, 'couple_monthly_plans/p3')))
   await assertSucceeds(deleteDoc(doc(partner, 'couple_monthly_plans/p1')))

@@ -17,6 +17,7 @@ import { TimelinePage } from './pages/TimelinePage'
 import { TruthOrDarePage } from './pages/TruthOrDarePage'
 
 const CoupleQuizPage = lazy(() => import('./pages/CoupleQuizPage').then(({ CoupleQuizPage: page }) => ({ default: page })))
+const RelationshipRulesPage = lazy(() => import('./pages/RelationshipRulesPage').then(({ RelationshipRulesPage: page }) => ({ default: page })))
 const MonthlyPlansPage = lazy(() => import('./pages/MonthlyPlansPage').then(({ MonthlyPlansPage: page }) => ({ default: page })))
 
 function PageLoading() {
@@ -76,6 +77,10 @@ export default function App() {
                 </Suspense>
               </ProtectedRoute>
             }
+          />
+          <Route
+            path="/nossas-regras"
+            element={<ProtectedRoute><Suspense fallback={<PageLoading />}><RelationshipRulesPage /></Suspense></ProtectedRoute>}
           />
           <Route
             path="/futuro"
